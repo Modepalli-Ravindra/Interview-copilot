@@ -1,5 +1,27 @@
 # CI/CD Guide: Automated Pipelines & Deployment Gates
 
+## 6. As-Built: InterviewPilot GitHub Actions (Phase 12)
+The production pipeline (`.github/workflows/ci.yml`) is intentionally simple for a
+single-user free-tier app — validation-only, with deploy handled by each host's
+native git integration.
+
+*   **Jobs (run on push/PR to `main`, one job set per workspace):**
+    1. `backend` — `npm ci` + `npm run build` (TypeScript compile gate) in `backend/`.
+    2. `frontend` — `npm ci` + `npm run lint` (oxlint) + `npm run build` (tsc -b && vite) in `frontend/`.
+    3. `dockerfile` — `docker build` of `backend/Dockerfile` (context: repo root) and
+       `backend/Dockerfile.render` (context: `backend/`), plus `bash -n` on
+       `backend/supervisor.sh`. This verifies the Render artifact compiles locally
+       in CI even though Docker is not available on the dev machine.
+*   **Concurrency:** per-ref `concurrency` group cancels superseded runs.
+*   **Deploy (no GitHub Action needed):**
+    *   **Render** auto-deploys via Blueprint `autoDeployTrigger: commit` on `main`
+        (see `docs/39_Deployment_Guide.md` §5).
+    *   **Vercel** auto-deploys via its git integration once the repo is imported
+        (Phase 13).
+*   **Not yet wired (future):** test job (no test suite until Phase 15), staging
+    environment, canary/rollback — the §1–§3 vision is aspirational; single-user
+    production runs straight from `main`.
+
 ## 1. Automated Delivery Pipeline
 The platform uses automated CI/CD pipelines (via GitHub Actions) to run checks, compile code, build Docker images, and deploy services to staging and production environments.
 

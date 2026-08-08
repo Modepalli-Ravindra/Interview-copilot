@@ -26,6 +26,11 @@
 >   Validated: render.yaml YAML + supervisor.sh `sh -n` + prod artifact boot. **Manual steps
 >   pending:** git init + push to GitHub, then Render Dashboard → New → Blueprint; the repo
 >   is not a git repo yet and no Render account/API key is available from this machine.
+> - **Git repo + Phase 12 done:** repo initialized (128 files, no secrets tracked), initial
+>   commit `104b064`; `.github/workflows/ci.yml` (backend tsc build, frontend oxlint+vite
+>   build, dockerfile build of both images + `bash -n` supervisor.sh), `docs/40_CICD_Guide.md`
+>   §6 as-built. CI is validation-only — Render (Blueprint commit trigger) and Vercel (git
+>   integration, Phase 13) deploy from `main`.
 > - **Phase 2 docs reconciled** in `docs/08, 13, 14, 39, 41, 47` (as-built headers).
 
 This document records the *actual* implementation as it exists today, separates real functionality from mock/fallback paths, and lists the blockers and decisions that gate the production plan. It is the reference for all subsequent phases.
