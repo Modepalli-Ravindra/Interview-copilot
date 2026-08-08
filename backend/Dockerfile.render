@@ -1,0 +1,49 @@
+# Render production image: InterviewPilot backend + OmniRoute in ONE container.
+#
+# Stage 2 is based on the official OmniRoute image (diegosouzapw/omniroute:latest)
+# so we inherit its standalone Next.js runtime, healthcheck script, non-root `node`
+# user and its entrypoint (/tmp/check-permissions.sh → exec "$@"). We only layer
+# the compiled backend on top and swap the CMD for a supervisor that runs both.
+
+# ─────────────────────────────────────────────
+# Stage 1: build the backend (mirrors backend/Dockerfile)
+# ─────────────────────────────────────────────
+FROM node:22-alpine AS builder
+
+WORKDIR /build
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+RUN npm prune --omit=dev
+
+# ─────────────────────────────────────────────
+# Stage 2: runtime — official OmniRoute image + backend
+# ─────────────────────────────────────────────
+FROM diegosouzapw/omniroute:latest
+
+USER root
+WORKDIR /app
+
+# Lay the compiled backend beside OmniRoute's standalone output.
+COPY --from=builder /build/dist /app/interviewpilot/dist
+COPY --from=builder /build/node_modules /app/interviewpilot/node_modules
+COPY --from=builder /build/package.json /app/interviewpilot/package.json
+
+# Writable data dir for the GitHub cache / JSON-store fallback.
+RUN mkdir -p /app/interviewpilot/data && chown -R node:node /app/interviewpilot
+
+# Supervisor: starts OmniRoute (:20128) and the backend ($PORT) together.
+COPY supervisor.sh /app/supervisor.sh
+RUN chmod +x /app/supervisor.sh && chown node:node /app/supervisor.sh
+
+# The official entrypoint keeps a single process; hand both processes to the
+# supervisor, which forwards SIGTERM/SIGINT and restarts children on exit.
+USER node
+
+EXPOSE 20128 3000
+
+CMD ["/app/supervisor.sh"]

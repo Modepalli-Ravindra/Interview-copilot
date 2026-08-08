@@ -1,0 +1,63 @@
+# Render Blueprint — InterviewPilot backend (single free web service).
+#
+# Runs BOTH processes in one container via backend/supervisor.sh:
+#   - OmniRoute AI gateway on :20128 (internal only)
+#   - Express + Socket.IO backend on $PORT (public, Render injects PORT)
+#
+# Deploy: push this repo to GitHub, then in the Render Dashboard choose
+#   New -> Blueprint -> your repo -> render.yaml. Render prompts for the
+#   sync:false secrets (SUPABASE_KEY, FRONTEND_URL) on first sync.
+#
+# Note: free instances have NO persistent disk — OmniRoute's quota/SQLite
+# state and the backend GitHub cache reset on each deploy/restart (acceptable
+# for a single-user app; real data lives in Supabase).
+
+services:
+  - type: web
+    name: interviewpilot-api
+    runtime: docker
+    plan: free
+    region: singapore # closest to the user; change freely
+    branch: main
+    dockerfilePath: ./backend/Dockerfile.render
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    numInstances: 1
+
+    envVars:
+      # ── Server ──────────────────────────────────────────────
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_URL
+        sync: false # set to the Vercel app URL after Phase 13 (e.g. https://yourapp.vercel.app)
+      # ── Security ────────────────────────────────────────────
+      # OFF until Phase 13 wires the token into the frontend fetch() calls.
+      - key: AUTH_ENABLED
+        value: "false"
+      - key: AUTH_TOKEN
+        generateValue: true
+      # ── Database (Supabase) ─────────────────────────────────
+      - key: SUPABASE_URL
+        value: https://qlprqqvkmasowujdefif.supabase.co
+      - key: SUPABASE_KEY
+        sync: false # paste the publishable key (sb_publishable_...)
+      # ── AI provider chain ───────────────────────────────────
+      # OmniRoute runs inside this same container; opencode is not deployed.
+      - key: AI_PROVIDER_ORDER
+        value: omniroute
+      - key: OMNIROUTE_URL
+        value: http://127.0.0.1:20128
+      - key: OMNIROUTE_MODEL
+        value: auto
+      - key: OMNIROUTE_TIMEOUT_MS
+        value: "120000"
+      - key: AI_GATEWAY_MAX_RETRIES
+        value: "1"
+      # ── Container memory budget (512MB free tier) ───────────
+      # OmniRoute heap; backend heap is fixed at 96MB in supervisor.sh.
+      - key: OMNIROUTE_MEMORY_MB
+        value: "320"
+      # opencode fallback is not available on Render.
+      - key: OPENCODE_SERVER_URL
+        value: disabled

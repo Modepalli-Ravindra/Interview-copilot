@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+backend/dist/
+frontend/dist/
+
+# Environment & secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Runtime data (session store fallback + GitHub cache)
+backend/data/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

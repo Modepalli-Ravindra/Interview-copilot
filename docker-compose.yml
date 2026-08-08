@@ -1,0 +1,70 @@
+name: interviewpilot
+
+services:
+  # ─────────────────────────────────────────────────────────────
+  # OmniRoute — free-provider AI gateway (official image, ~250MB).
+  # Persists its SQLite store + config in the named volume so keys
+  # and quota state survive restarts. Bound to 127.0.0.1 only.
+  # ─────────────────────────────────────────────────────────────
+  omniroute:
+    image: diegosouzapw/omniroute:latest
+    container_name: interviewpilot-omniroute
+    restart: unless-stopped
+    stop_grace_period: 40s
+    ports:
+      - "127.0.0.1:20128:20128"
+    volumes:
+      - omniroute-data:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:20128/v1/models').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+
+  # ─────────────────────────────────────────────────────────────
+  # InterviewPilot backend (built from ./backend/Dockerfile).
+  # Reaches OmniRoute via the compose network as `omniroute:20128`
+  # (not 127.0.0.1 — that only works when both run on the host).
+  # ─────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: interviewpilot-backend
+    restart: unless-stopped
+    depends_on:
+      omniroute:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      OMNIROUTE_URL: http://omniroute:20128
+    volumes:
+      - backend-data:/usr/src/app/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+volumes:
+  omniroute-data:
+  backend-data:
