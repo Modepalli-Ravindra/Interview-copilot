@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useInterviewStore } from '../../stores/interviewStore';
+import { apiFetch } from '../../lib/api';
 import { Play, CheckCircle2, XCircle, Clock, ChevronDown, Unplug } from 'lucide-react';
 
 const LANGUAGES = [
@@ -30,7 +31,7 @@ export default function CodeWorkspace({ testCases = [], onAccepted }: CodeWorksp
     setRunningCode(true);
     setCodeResult(null);
     try {
-      const res = await fetch('/api/execute', {
+      const res = await apiFetch('/api/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

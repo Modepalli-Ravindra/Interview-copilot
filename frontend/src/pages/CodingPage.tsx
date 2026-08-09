@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import CodeWorkspace from '../components/interview/CodeWorkspace';
 import { useInterviewStore } from '../stores/interviewStore';
+import { apiFetch } from '../lib/api';
 import type { Problem } from '../types';
 
 type Difficulty = 'Easy' | 'Medium' | 'Hard';
@@ -48,7 +49,7 @@ export default function CodingPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/problems');
+        const res = await apiFetch('/api/problems');
         const json = await res.json();
         if (json.success && Array.isArray(json.data)) {
           setProblems(json.data);

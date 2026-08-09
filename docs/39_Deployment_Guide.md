@@ -26,6 +26,12 @@
 >   region `singapore`). Memory is budgeted for the 512MB free tier
 >   (`OMNIROUTE_MEMORY_MB=320`, backend heap 96MB). `AUTH_ENABLED=false` on Render until
 >   Phase 13 wires the token into frontend calls.
+> - **Phase 13 (Vercel) added:** frontend calls the Render backend **directly** via
+>   `VITE_BACKEND_URL` (build-time env) — `frontend/src/lib/api.ts` `apiFetch()` prepends it
+>   and injects `Authorization: Bearer <token>` from `localStorage['interviewpilot_token']`;
+>   `socketService` connects to `${VITE_BACKEND_URL}/interview` with the token in the
+>   handshake, and the backend socket now rejects handshakes without it when
+>   `AUTH_ENABLED=true`. `frontend/vercel.json` = Vite build + SPA fallback. See §6.
 
 ---
 
@@ -131,6 +137,33 @@ curl -s https://interviewpilot-api.onrender.com/api/sessions # 401 without token
 - `AUTH_ENABLED=false` on Render by design until Phase 13 adds the token header to the frontend.
 - Fallback chain on Render: OmniRoute (same container) → **mock** (opencode is `disabled`).
 - Container image ~500MB+; first build takes several minutes (500 free build min/mo).
+
+---
+
+## 6. As-Built Deploy Runbook (Phase 13 — Vercel)
+
+**Deploy:**
+1. Push the repo to GitHub (main).
+2. Vercel → **Add New → Project** → import the repo.
+3. Set **Root Directory** = `frontend` (monorepo: the Vite app lives in `frontend/`; `frontend/vercel.json` supplies build command + output dir + SPA fallback).
+4. Add env var **`VITE_BACKEND_URL`** = the Render URL, e.g. `https://interviewpilot-api.onrender.com` (build-time — redeploy on change).
+5. Deploy → free Vercel app, e.g. `https://interviewpilot-<slug>.vercel.app`.
+
+**After both sides are up:**
+6. On Render, set `FRONTEND_URL` (the `sync:false` secret) to the Vercel URL so Express + Socket.IO CORS accept it.
+7. Optional: enable auth — set `AUTH_ENABLED=true` on Render with the generated `AUTH_TOKEN`, then in the browser devtools: `localStorage.setItem('interviewpilot_token', '<same token>')`. Frontend now attaches `Authorization: Bearer <token>` to REST and the socket handshake.
+
+**Verify:**
+```bash
+curl -s https://<vercel-app>/   # HTML SPA
+curl -s https://<render-app>/api/health
+```
+Open the Vercel URL → start an interview → check Network tab: `/api/...` calls go to `https://<render-app>` (not Vercel), socket connects with `wss://<render-app>/socket.io`.
+
+**Gotchas:**
+- No `/api` proxy on Vercel by design — everything is same-`VITE_BACKEND_URL`. If `VITE_BACKEND_URL` is empty, calls fall back to the same origin and will hit the SPA fallback (breaks API) — always set it in production.
+- Vercel rewrites don't reliably proxy external WebSockets; the direct URL avoids that.
+- `vercel.json` SPA fallback only rewrites non-`assets/` paths; real static files (Vite hashed assets) are served first.
 
 ---
 

@@ -20,6 +20,14 @@ const lastTurnAt = new Map<string, number>(); // sessionId -> last candidate tur
 const MAX_CONNECTIONS_PER_IP = 5;
 const MIN_TURN_INTERVAL_MS = 1200;
 
+function socketTokenOk(socket: Socket): boolean {
+  if (process.env.AUTH_ENABLED !== 'true') return true;
+  const expected = process.env.AUTH_TOKEN;
+  if (!expected) return false;
+  const token = (socket.handshake.auth && socket.handshake.auth.token) || '';
+  return token === expected;
+}
+
 function emitTranscript(namespace: Namespace, sessionId: string, sender: string, text: string) {
   namespace.to(`session:${sessionId}`).emit('transcript_update', {
     sender,
@@ -78,6 +86,12 @@ async function finalizeSession(namespace: Namespace, sessionId: string, state: I
 
 export function registerInterviewHandlers(namespace: Namespace) {
   namespace.on('connection', (socket: Socket) => {
+    if (!socketTokenOk(socket)) {
+      console.warn(`[WS:interview] Unauthorized connection rejected: ${socket.id}`);
+      socket.emit('error', { message: 'Unauthorized' });
+      socket.disconnect(true);
+      return;
+    }
     const ip = (socket.handshake.address || 'unknown').replace(/^::ffff:/, '');
     const ipCount = (connectionsByIp.get(ip) || 0) + 1;
     if (ipCount > MAX_CONNECTIONS_PER_IP) {

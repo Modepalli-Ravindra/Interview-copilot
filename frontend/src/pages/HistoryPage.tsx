@@ -6,6 +6,7 @@ import {
   ChevronRight, FileText, AlertTriangle, BarChart3, Lightbulb,
 } from 'lucide-react';
 import type { InterviewSession } from '../types';
+import { apiFetch } from '../lib/api';
 
 type SessionMode = 'CODING' | 'BEHAVIORAL' | 'SYSTEM_DESIGN' | 'PROJECT' | 'TECHNICAL';
 
@@ -85,7 +86,7 @@ export default function HistoryPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/sessions');
+        const res = await apiFetch('/api/sessions');
         const json = await res.json();
         if (json.success && Array.isArray(json.data)) {
           setSessions(buildHistory(json.data));

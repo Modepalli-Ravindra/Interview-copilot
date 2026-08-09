@@ -7,6 +7,7 @@ import {
   FileText, UploadCloud, Loader2, X, Link2, Unplug, AlignLeft,
 } from 'lucide-react';
 import type { InterviewSession, GitHubProfile, RepoDetail } from '../types';
+import { apiFetch } from '../lib/api';
 
 type InterviewMode = 'CODING' | 'BEHAVIORAL' | 'SYSTEM_DESIGN' | 'PROJECT' | 'TECHNICAL';
 
@@ -83,7 +84,7 @@ export default function InterviewsPage() {
 
   const fetchSessions = useCallback(async () => {
     try {
-      const res = await fetch('/api/sessions');
+      const res = await apiFetch('/api/sessions');
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) setSessions(json.data);
     } catch (err) {
@@ -135,7 +136,7 @@ export default function InterviewsPage() {
     try {
       const useDeep = selectedMode === 'PROJECT' && deepScan;
       const summary = useDeep ? buildDeepSummary() || lightSummary : lightSummary;
-      const res = await fetch('/api/sessions', {
+      const res = await apiFetch('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -205,7 +206,7 @@ export default function InterviewsPage() {
     if (!username) return;
     setGithub(g => ({ ...g, connecting: true, error: null }));
     try {
-      const res = await fetch(`/api/github/${encodeURIComponent(username)}`);
+      const res = await apiFetch(`/api/github/${encodeURIComponent(username)}`);
       const json = await res.json();
       if (json.success && json.data) {
         const profile = json.data as GitHubProfile;
@@ -229,7 +230,7 @@ export default function InterviewsPage() {
       const results = await Promise.all(
         targets.map(async (r) => {
           try {
-            const res = await fetch(`/api/github/${encodeURIComponent(profile.username)}/${encodeURIComponent(r.name)}`);
+            const res = await apiFetch(`/api/github/${encodeURIComponent(profile.username)}/${encodeURIComponent(r.name)}`);
             const json = await res.json();
             return json.success ? (json.data as RepoDetail) : null;
           } catch {
@@ -253,7 +254,7 @@ export default function InterviewsPage() {
     if (!resume?.content) return;
     setIsAnalyzingResume(true);
     try {
-      const res = await fetch('/api/analysis/resume', {
+      const res = await apiFetch('/api/analysis/resume', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

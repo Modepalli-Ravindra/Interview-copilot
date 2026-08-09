@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client';
+import { getBackendUrl, getAuthToken } from '../lib/api';
 
 class SocketService {
   private socket: Socket | null = null;
@@ -6,10 +7,14 @@ class SocketService {
   connect(): Socket {
     if (this.socket?.connected) return this.socket;
 
-    this.socket = io('/interview', {
+    const backend = getBackendUrl();
+    const url = backend ? `${backend}/interview` : '/interview';
+    const token = getAuthToken();
+    this.socket = io(url, {
       transports: ['websocket', 'polling'],
       withCredentials: true,
       autoConnect: true,
+      ...(token ? { auth: { token } } : {}),
     });
 
     this.socket.on('connect', () => {

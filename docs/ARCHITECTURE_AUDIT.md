@@ -31,6 +31,17 @@
 >   build, dockerfile build of both images + `bash -n` supervisor.sh), `docs/40_CICD_Guide.md`
 >   §6 as-built. CI is validation-only — Render (Blueprint commit trigger) and Vercel (git
 >   integration, Phase 13) deploy from `main`.
+> - **Phase 13 done:** frontend talks to the backend **directly** via `VITE_BACKEND_URL` —
+>   `frontend/src/lib/api.ts` (`apiFetch` prepends base + injects `Authorization: Bearer` from
+>   `localStorage['interviewpilot_token']`, `setAuthToken`/`clearAuthToken`); all 11 fetch
+>   call sites converted (6 pages + CodeWorkspace); `socketService` connects to
+>   `${VITE_BACKEND_URL}/interview` sending the token in the handshake; backend
+>   `interviewHandler.ts` now rejects handshakes without the token when `AUTH_ENABLED=true`
+>   (completes the WS auth seam). `frontend/vercel.json` (Vite build + SPA fallback) +
+>   `frontend/.env.example`. Verified: both apps build clean (tsc + oxlint + vite).
+>   **Manual steps pending:** Vercel import (Root Directory `frontend`, `VITE_BACKEND_URL`),
+>   then set Render `FRONTEND_URL`; auth enablement is optional (set `AUTH_ENABLED=true` +
+>   seed the same token into browser localStorage).
 > - **Phase 2 docs reconciled** in `docs/08, 13, 14, 39, 41, 47` (as-built headers).
 
 This document records the *actual* implementation as it exists today, separates real functionality from mock/fallback paths, and lists the blockers and decisions that gate the production plan. It is the reference for all subsequent phases.

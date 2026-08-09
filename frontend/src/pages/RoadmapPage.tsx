@@ -5,6 +5,7 @@ import {
   Target, TrendingUp, Sparkles, Loader2, RefreshCw, ArrowUpRight,
 } from 'lucide-react';
 import type { Roadmap as RoadmapType, InterviewSession } from '../types';
+import { apiFetch } from '../lib/api';
 
 interface RoadmapStep {
   title: string;
@@ -58,7 +59,7 @@ export default function RoadmapPage() {
         if (company) body.company = company;
         body.mode = mode;
       }
-      const res = await fetch('/api/roadmap', {
+      const res = await apiFetch('/api/roadmap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -79,7 +80,7 @@ export default function RoadmapPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/sessions');
+        const res = await apiFetch('/api/sessions');
         const json = await res.json();
         if (json.success && Array.isArray(json.data)) {
           setSessions(json.data);

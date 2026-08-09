@@ -6,6 +6,7 @@ import {
   ChevronRight, Plus, FileText, CheckCircle2, Loader2,
 } from 'lucide-react';
 import type { DashboardData } from '../types';
+import { apiFetch } from '../lib/api';
 
 const scoreColor = (s: number) =>
   s >= 90 ? 'hsl(142 70% 50%)' : s >= 75 ? 'hsl(35 90% 55%)' : 'hsl(0 85% 60%)';
@@ -24,7 +25,7 @@ export default function DashboardPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/dashboard');
+        const res = await apiFetch('/api/dashboard');
         const json = await res.json();
         if (json.success && json.data) setData(json.data);
       } catch (err) {

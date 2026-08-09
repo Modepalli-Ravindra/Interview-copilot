@@ -9,6 +9,7 @@ import AiAvatar from '../components/interview/AiAvatar';
 import { useInterviewStore } from '../stores/interviewStore';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
 import { socketService } from '../services/socketService';
+import { apiFetch } from '../lib/api';
 import type { Problem, FeedbackReport } from '../types';
 
 type TabMode = 'transcript' | 'code' | 'problem';
@@ -94,7 +95,7 @@ export default function InterviewPage() {
   // ── Real-time session: backend drives the AI ─────────
   const loadFeedback = useCallback(async () => {
     try {
-      const res = await fetch(`/api/sessions/${sessionId}/feedback`);
+      const res = await apiFetch(`/api/sessions/${sessionId}/feedback`);
       const json = await res.json();
       if (json.success && json.data) setFeedback(json.data as FeedbackReport);
     } catch (err) {
@@ -110,8 +111,8 @@ export default function InterviewPage() {
     (async () => {
       try {
         const [sRes, pRes] = await Promise.all([
-          fetch(`/api/sessions/${sessionId}`),
-          fetch('/api/problems'),
+          apiFetch(`/api/sessions/${sessionId}`),
+          apiFetch('/api/problems'),
         ]);
         const sJson = await sRes.json();
         if (sJson.success && sJson.data) {
