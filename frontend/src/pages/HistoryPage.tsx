@@ -9,7 +9,7 @@ import {
 import type { InterviewSession } from '../types';
 import { apiFetch } from '../lib/api';
 
-type SessionMode = 'CODING' | 'BEHAVIORAL' | 'SYSTEM_DESIGN' | 'PROJECT' | 'TECHNICAL' | 'HR' | 'MIXED' | 'RESUME_BASED' | 'JD_BASED' | 'SKILLS_BASED';
+type SessionMode = 'CODING' | 'BEHAVIORAL' | 'SYSTEM_DESIGN' | 'PROJECT' | 'TECHNICAL' | 'HR' | 'MIXED' | 'RESUME_BASED' | 'JD_BASED' | 'SKILLS_BASED' | 'CODING_INTERVIEW';
 
 interface HistorySession {
   id: string;
@@ -43,6 +43,7 @@ const modeColor: Record<SessionMode, string> = {
   RESUME_BASED:   'hsl(200 85% 60%)',
   JD_BASED:       'hsl(10 85% 62%)',
   SKILLS_BASED:   'hsl(285 75% 66%)',
+  CODING_INTERVIEW: 'hsl(176 85% 65%)',
 };
 
 const severityColor: Record<'HIGH' | 'MEDIUM' | 'LOW', string> = {
@@ -223,7 +224,7 @@ export default function HistoryPage() {
           />
         </div>
         <div style={{ display: 'flex', gap: 4, background: 'hsl(215 15% 8%)', padding: 4, borderRadius: 10, border: '1px solid hsl(215 15% 16%)' }}>
-          {(['ALL', 'CODING', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT', 'TECHNICAL', 'HR', 'MIXED', 'RESUME_BASED', 'JD_BASED', 'SKILLS_BASED'] as const).map(m => (
+          {(['ALL', 'CODING', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT', 'TECHNICAL', 'HR', 'MIXED', 'RESUME_BASED', 'JD_BASED', 'SKILLS_BASED', 'CODING_INTERVIEW'] as const).map(m => (
             <button
               key={m}
               onClick={() => setModeFilter(m)}

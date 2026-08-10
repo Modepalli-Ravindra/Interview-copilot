@@ -11,6 +11,7 @@ import SettingsPage from './pages/SettingsPage';
 import CandidatesPage from './pages/CandidatesPage';
 import GithubProjectPage from './pages/GithubProjectPage';
 import InterviewPage from './pages/InterviewPage';
+import CodingInterviewPage from './pages/CodingInterviewPage';
 
 function App() {
   return (
@@ -33,6 +34,8 @@ function App() {
         </Route>
 
         <Route path="/interview/:sessionId" element={<InterviewPage />} />
+        <Route path="/coding-interview" element={<CodingInterviewPage />} />
+        <Route path="/coding-interview/:sessionId" element={<CodingInterviewPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

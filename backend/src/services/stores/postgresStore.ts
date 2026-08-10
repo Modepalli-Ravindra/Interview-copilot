@@ -24,6 +24,7 @@ export const SCHEMA_SQL = `
     jd_profile_data     jsonb,
     match_report        jsonb,
     coding         jsonb,
+    coding_interview jsonb,
     resume_file_key text,
     resume_file_url text,
     resume_file_name text,
@@ -52,6 +53,7 @@ export const SCHEMA_SQL = `
   alter table sessions add column if not exists jd_profile_data     jsonb;
   alter table sessions add column if not exists match_report        jsonb;
   alter table sessions add column if not exists coding              jsonb;
+  alter table sessions add column if not exists coding_interview    jsonb;
   alter table sessions add column if not exists resume_file_key  text;
   alter table sessions add column if not exists resume_file_url  text;
   alter table sessions add column if not exists resume_file_name text;
@@ -66,15 +68,17 @@ const UPSERT_SQL = `
   insert into sessions (
     id, mode, role, company, candidate_id, resume_text, jd_text, github_summary,
     difficulty, skills, resume_profile, jd_profile, resume_profile_data, jd_profile_data, match_report, coding,
+    coding_interview,
     resume_file_key, resume_file_url, resume_file_name,
     status, created_at, started_at, score, duration_ms, feedback, roadmap, transcript,
     project_profile_data, project_index, github_analysis, github_analyzed_at
   ) values (
     $1, $2, $3, $4, $5, $6, $7, $8,
     $9, $10, $11, $12, $13, $14, $15, $16,
-    $17, $18, $19,
-    $20, $21, $22, $23, $24, $25, $26, $27,
-    $28, $29, $30, $31
+    $17,
+    $18, $19, $20,
+    $21, $22, $23, $24, $25, $26, $27, $28,
+    $29, $30, $31, $32
   )
   on conflict (id) do update set
     mode = excluded.mode,
@@ -92,6 +96,7 @@ const UPSERT_SQL = `
     jd_profile_data = excluded.jd_profile_data,
     match_report = excluded.match_report,
     coding = excluded.coding,
+    coding_interview = excluded.coding_interview,
     resume_file_key = excluded.resume_file_key,
     resume_file_url = excluded.resume_file_url,
     resume_file_name = excluded.resume_file_name,
@@ -127,6 +132,7 @@ export function toRow(rec: Record<string, any>) {
     rec.jdProfileData ?? null,
     rec.matchReport ?? null,
     rec.coding ?? null,
+    rec.codingInterview ?? null,
     rec.resumeFileKey ?? null,
     rec.resumeFileUrl ?? null,
     rec.resumeFileName ?? null,
@@ -163,6 +169,7 @@ export function fromRow(row: any): Record<string, any> {
     jdProfileData: row.jd_profile_data ?? null,
     matchReport: row.match_report ?? null,
     coding: row.coding ?? null,
+    codingInterview: row.coding_interview ?? null,
     resumeFileKey: row.resume_file_key ?? null,
     resumeFileUrl: row.resume_file_url ?? null,
     resumeFileName: row.resume_file_name ?? null,

@@ -24,6 +24,7 @@ const modeLabel: Record<string, string> = {
   RESUME_BASED: 'Resume',
   JD_BASED: 'JD',
   SKILLS_BASED: 'Skills',
+  CODING_INTERVIEW: 'Coding Interview',
 };
 
 const statusStyle: Record<string, { color: string; bg: string }> = {

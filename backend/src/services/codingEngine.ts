@@ -10,6 +10,7 @@
 
 import { createHash } from 'crypto';
 import { createGatewaySession, sendGatewayMessage } from './aiGateway';
+import { detectConcepts, normalizeConcepts, sharesConcept } from './codingConcepts';
 
 export type Difficulty = 'Easy' | 'Medium' | 'Hard';
 
@@ -39,6 +40,8 @@ export interface CodingQuestion {
   language: string;
   difficulty: Difficulty;
   topic: string;
+  /** Canonical concept slugs (used for concept-level duplicate detection). */
+  concepts: string[];
   questionHash: string;
   source: 'ai' | 'template';
   date: string;
@@ -53,6 +56,7 @@ export interface QuestionHistoryEntry {
   source: string;
   date: string;
   interviewId?: string;
+  concepts?: string[];
 }
 
 export interface GenerateQuestionInput {
@@ -63,6 +67,26 @@ export interface GenerateQuestionInput {
   difficulty: Difficulty;
   topic?: string;
   previous: QuestionHistoryEntry[];
+  // ── Phase 5: expanded (compact) candidate/job/project/performance context ──
+  /** Compact structured resume summary (summarizeResumeProfile output). */
+  resumeProfile?: string;
+  /** Compact structured JD summary (summarizeJdProfile output). */
+  jdProfile?: string;
+  /** Compact resume<->JD match summary (summarizeMatchReport output). */
+  matchSummary?: string;
+  /** Compact GitHub/project analysis summary (summarizeProjectProfile output). */
+  projectProfile?: string;
+  /** Raw-ish GitHub summary text when no structured profile exists. */
+  githubSummary?: string;
+  /** Canonical concepts the candidate failed on earlier questions. */
+  failedConcepts?: string[];
+  /** Canonical concepts the candidate has mastered. */
+  masteredConcepts?: string[];
+  /** Structured JD required/preferred skills for the <job_context> block. */
+  jdRequiredSkills?: string[];
+  jdPreferredSkills?: string[];
+  /** Structured JD responsibilities. */
+  jdResponsibilities?: string[];
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -102,6 +126,28 @@ export function isDuplicate(question: string, history: QuestionHistoryEntry[]): 
     }
   }
   return { isDup: false, reason: 'unique' };
+}
+
+/**
+ * Phase 5 — concept-level duplicate detection. Two questions that share the
+ * same canonical underlying pattern (e.g. both two-sum style hash-map pair
+ * lookups) are rejected even when the wording is entirely different. Uses only
+ * deterministic local concept metadata — no embedding API required.
+ */
+export function isConceptDuplicate(
+  concepts: string[],
+  history: QuestionHistoryEntry[],
+): { isDup: boolean; reason: string } {
+  const normalized = normalizeConcepts(concepts);
+  if (normalized.length === 0) return { isDup: false, reason: 'no concepts' };
+  for (const h of history) {
+    const prev = h.concepts && h.concepts.length ? h.concepts : [];
+    if (!prev.length) continue;
+    if (sharesConcept(normalized, prev)) {
+      return { isDup: true, reason: `Same underlying pattern as a previous question (${normalized.slice(0, 3).join(', ')})` };
+    }
+  }
+  return { isDup: false, reason: 'concepts unique' };
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -368,6 +414,7 @@ function templateQuestion(language: string, difficulty: Difficulty, topic: strin
     language,
     difficulty,
     topic: tpl.topic,
+    concepts: detectConcepts(title, built.statement),
     questionHash: questionHash(questionText),
     source: 'template',
     date: new Date().toISOString(),
@@ -406,6 +453,9 @@ function finalizeQuestion(q: Partial<CodingQuestion>, input: GenerateQuestionInp
   const questionText = `${q.title}. ${q.problemStatement} ${q.inputFormat} ${q.outputFormat}`;
   const hidden = Array.isArray(q.hiddenTestCases) && q.hiddenTestCases.length ? q.hiddenTestCases : [];
   const visible = Array.isArray(q.testCases) ? q.testCases : [];
+  const concepts = normalizeConcepts(
+    Array.isArray(q.concepts) ? q.concepts : detectConcepts(q.title || '', q.problemStatement || ''),
+  );
   return {
     id: `ai-${questionHash(questionText)}`,
     title: q.title!.trim(),
@@ -420,6 +470,7 @@ function finalizeQuestion(q: Partial<CodingQuestion>, input: GenerateQuestionInp
     language: q.language!.trim() || input.language,
     difficulty: q.difficulty as Difficulty,
     topic: q.topic || topic,
+    concepts,
     questionHash: questionHash(questionText),
     source: 'ai',
     date: new Date().toISOString(),
@@ -441,6 +492,26 @@ async function generateWithAI(input: GenerateQuestionInput, topic: string, attem
     ? input.previous.slice(-8).map((p, i) => `${i + 1}. ${p.question}`).join('\n')
     : 'none';
 
+  // ── Phase 5: optional compact context blocks (resume/JD/match/project/performance) ──
+  const resumeBlock = input.resumeProfile
+    ? `<candidate_context>\n${truncateForPrompt(input.resumeProfile, 1800)}\n</candidate_context>`
+    : null;
+
+  const jobBlock = buildJobContextBlock(input);
+
+  const projectBlock = (input.projectProfile || input.githubSummary)
+    ? `<project_context>\n${truncateForPrompt(input.projectProfile || input.githubSummary || '', 1500)}\n</project_context>`
+    : null;
+
+  const perfBlock =
+    input.failedConcepts?.length || input.masteredConcepts?.length
+      ? `<performance_context>\n${[
+          input.failedConcepts?.length ? `Concepts the candidate struggled with earlier: ${input.failedConcepts.slice(0, 10).join(', ')}.` : '',
+          input.masteredConcepts?.length ? `Concepts the candidate already mastered: ${input.masteredConcepts.slice(0, 10).join(', ')}.` : '',
+          'Tailor the problem to strengthen the struggled concepts when possible, without repeating them verbatim.',
+        ].filter(Boolean).join('\n')}\n</performance_context>`
+      : null;
+
   const prompt = [
     `You are a senior coding interviewer generating a fresh coding problem for a live mock interview.`,
     `Role: ${input.role}`,
@@ -449,6 +520,10 @@ async function generateWithAI(input: GenerateQuestionInput, topic: string, attem
     `Topic to target: ${topic}`,
     ``,
     skillContext,
+    ...(resumeBlock ? ['', resumeBlock] : []),
+    ...(jobBlock ? ['', jobBlock] : []),
+    ...(projectBlock ? ['', projectBlock] : []),
+    ...(perfBlock ? ['', perfBlock] : []),
     ``,
     `<questions_already_asked>`,
     prevBlock,
@@ -456,11 +531,15 @@ async function generateWithAI(input: GenerateQuestionInput, topic: string, attem
     ``,
     `Generate an original ${input.difficulty.toLowerCase()} coding problem in "${input.language}".`,
     `- Do NOT repeat or trivially reword any question in <questions_already_asked>.`,
+    `- Do NOT reuse the same underlying algorithm as any earlier question (e.g. two different two-sum/hash-map-pair problems are still duplicates).`,
     `- It must be practical and solvable in a 30-45 minute voice interview.`,
-    `- It should relate to the candidate's skills where natural (e.g. React/Vite, Node/Express, PostgreSQL).`,
+    `- Weave in the candidate's actual stack from <candidate_context>/<project_context> where natural (e.g. React/Vite, Node/Express, PostgreSQL), but keep the core a solvable algorithm/data-structure problem.`,
+    ...(input.failedConcepts?.length
+      ? [`- If a concept listed in <performance_context> fits the ${topic} topic, prefer it as the central technique.`]
+      : []),
     ``,
     `Return exactly one JSON object, no markdown, with this schema:`,
-    `{"title":"<short title>","problemStatement":"<full problem, markdown allowed>","constraints":["<...>"],"inputFormat":"<how stdin is read>","outputFormat":"<what stdout prints>","examples":[{"input":"<stdin>","output":"<stdout>","explanation":"<optional>"}],"expectedComplexity":"<time+space>","testCases":[{"stdin":"<exact stdin>","expected":"<exact expected stdout>"}],"hiddenTestCases":[{"stdin":"<exact stdin>","expected":"<exact expected stdout>"}],"language":"${input.language}","difficulty":"${input.difficulty}","topic":"${topic}"}`,
+    `{"title":"<short title>","problemStatement":"<full problem, markdown allowed>","constraints":["<...>"],"inputFormat":"<how stdin is read>","outputFormat":"<what stdout prints>","examples":[{"input":"<stdin>","output":"<stdout>","explanation":"<optional>"}],"expectedComplexity":"<time+space>","concepts":["<3-5 canonical technique tags, e.g. hash map, sliding window, dynamic programming, graph traversal, prefix sum, stack, greedy, two pointers, binary search, string parsing, math>"],"testCases":[{"stdin":"<exact stdin>","expected":"<exact expected stdout>"}],"hiddenTestCases":[{"stdin":"<exact stdin>","expected":"<exact expected stdout>"}],"language":"${input.language}","difficulty":"${input.difficulty}","topic":"${topic}"}`,
     ``,
     `Rules for test cases: expected values MUST be exact stdout strings (trimmed), deterministic, and self-contained per stdin. Provide at least 3 visible and 3 hidden test cases (skip hiddenTestCases for SQL/frontend/API/design tasks).`,
   ].join('\n');
@@ -471,6 +550,25 @@ async function generateWithAI(input: GenerateQuestionInput, topic: string, attem
     throw new Error('AI returned an invalid coding question');
   }
   return finalizeQuestion(parsed, input, topic);
+}
+
+function truncateForPrompt(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max)}… (truncated)`;
+}
+
+function buildJobContextBlock(input: GenerateQuestionInput): string | null {
+  const jd = input.jdProfile;
+  const lines: string[] = [];
+  if (input.jdRequiredSkills?.length) lines.push(`Required skills: ${input.jdRequiredSkills.slice(0, 15).join(', ')}`);
+  if (input.jdPreferredSkills?.length) lines.push(`Preferred skills: ${input.jdPreferredSkills.slice(0, 15).join(', ')}`);
+  if (input.jdResponsibilities?.length) lines.push(`Responsibilities: ${input.jdResponsibilities.slice(0, 6).join('; ')}`);
+  if (lines.length) {
+    return `<job_context>\n${lines.join('\n')}${jd ? `\n${truncateForPrompt(jd, 1200)}` : ''}\n</job_context>`;
+  }
+  if (input.matchSummary) {
+    return `<job_context>\n${truncateForPrompt(input.matchSummary, 1200)}\n</job_context>`;
+  }
+  return jd ? `<job_context>\n${truncateForPrompt(jd, 1200)}\n</job_context>` : null;
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -497,6 +595,11 @@ export async function generateCodingQuestion(input: GenerateQuestionInput): Prom
       const question = await generateWithAI(input, topic, attempt);
       const dup = isDuplicate(`${question.title} ${question.problemStatement}`, input.previous);
       if (dup.isDup) {
+        dupRejected += 1;
+        continue;
+      }
+      const conceptDup = isConceptDuplicate(question.concepts, input.previous);
+      if (conceptDup.isDup) {
         dupRejected += 1;
         continue;
       }

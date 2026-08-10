@@ -122,6 +122,7 @@ router.post('/', async (req: Request, res: Response) => {
   const VALID_MODES = [
     'CODING', 'TECHNICAL', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT',
     'HR', 'MIXED', 'RESUME_BASED', 'JD_BASED', 'SKILLS_BASED',
+    'CODING_INTERVIEW',
   ];
   const VALID_DIFFICULTIES = ['Easy', 'Medium', 'Hard'];
   const cap = (v: unknown, max: number): string => {

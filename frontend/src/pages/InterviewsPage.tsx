@@ -9,7 +9,7 @@ import {
 import type { InterviewSession, GitHubProfile, RepoDetail, ResumeProfile, JdProfile, MatchReport } from '../types';
 import { apiFetch } from '../lib/api';
 
-type InterviewMode = 'CODING' | 'BEHAVIORAL' | 'SYSTEM_DESIGN' | 'PROJECT' | 'TECHNICAL' | 'HR' | 'MIXED' | 'RESUME_BASED' | 'JD_BASED' | 'SKILLS_BASED';
+type InterviewMode = 'CODING' | 'BEHAVIORAL' | 'SYSTEM_DESIGN' | 'PROJECT' | 'TECHNICAL' | 'HR' | 'MIXED' | 'RESUME_BASED' | 'JD_BASED' | 'SKILLS_BASED' | 'CODING_INTERVIEW';
 type InterviewDifficulty = 'Easy' | 'Medium' | 'Hard';
 
 const DEEP_SCAN_REPO_COUNT = 2;
@@ -41,6 +41,7 @@ const modes: { key: InterviewMode; label: string; desc: string; icon: typeof Cod
   { key: 'RESUME_BASED',   label: 'Resume-based',   desc: 'Drill into every resume claim', icon: FileText },
   { key: 'JD_BASED',       label: 'JD-based',       desc: 'Map answers to the job',       icon: AlignLeft },
   { key: 'SKILLS_BASED',   label: 'Skills-based',   desc: 'One skill drilled at a time',  icon: Cpu },
+  { key: 'CODING_INTERVIEW', label: 'Coding Interview', desc: 'Adaptive multi-question coding', icon: Code2 },
 ];
 
 const modeColor: Record<InterviewMode, string> = {
@@ -54,6 +55,7 @@ const modeColor: Record<InterviewMode, string> = {
   RESUME_BASED:   'hsl(200 85% 60%)',
   JD_BASED:       'hsl(10 85% 62%)',
   SKILLS_BASED:   'hsl(285 75% 66%)',
+  CODING_INTERVIEW: 'hsl(176 85% 65%)',
 };
 
 const scoreColor = (s: number) =>
@@ -1082,7 +1084,7 @@ export default function InterviewsPage() {
           Your Interviews
         </h2>
         <div style={{ display: 'flex', gap: 4, background: 'hsl(215 15% 8%)', padding: 4, borderRadius: 10, border: '1px solid hsl(215 15% 16%)' }}>
-          {(['ALL', 'CODING', 'TECHNICAL', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT', 'HR', 'MIXED', 'RESUME_BASED', 'JD_BASED', 'SKILLS_BASED'] as const).map(f => (
+          {(['ALL', 'CODING', 'TECHNICAL', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT', 'HR', 'MIXED', 'RESUME_BASED', 'JD_BASED', 'SKILLS_BASED', 'CODING_INTERVIEW'] as const).map(f => (
             <button
               key={f}
               onClick={() => setFilter(f)}

@@ -26,6 +26,7 @@ create table if not exists sessions (
   jd_profile_data     jsonb,
   match_report        jsonb,
   coding         jsonb,
+  coding_interview jsonb,
   resume_file_key  text,
   resume_file_url  text,
   resume_file_name text,
@@ -56,6 +57,7 @@ alter table sessions add column if not exists resume_profile_data jsonb;
 alter table sessions add column if not exists jd_profile_data     jsonb;
 alter table sessions add column if not exists match_report        jsonb;
 alter table sessions add column if not exists coding              jsonb;
+alter table sessions add column if not exists coding_interview    jsonb;
 alter table sessions add column if not exists resume_file_key  text;
 alter table sessions add column if not exists resume_file_url  text;
 alter table sessions add column if not exists resume_file_name text;

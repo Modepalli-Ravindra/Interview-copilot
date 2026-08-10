@@ -8,7 +8,8 @@ export type InterviewMode =
   | 'MIXED'
   | 'RESUME_BASED'
   | 'JD_BASED'
-  | 'SKILLS_BASED';
+  | 'SKILLS_BASED'
+  | 'CODING_INTERVIEW';
 
 export type InterviewDifficulty = 'Easy' | 'Medium' | 'Hard';
 
@@ -112,6 +113,7 @@ export interface FeedbackReport {
   model?: string | null;
   gateway?: string | null;
   fallbackReason?: string | null;
+  codingInterview?: CodingInterviewReport | null;
   generatedAt: string;
 }
 
@@ -578,4 +580,106 @@ export interface SessionProjectFields {
   githubSummary?: string;
   githubAnalysis?: string;
   githubAnalyzedAt?: string | null;
+}
+
+// ── Adaptive coding interview (Phase 5) ──────────────────────
+
+export type CodingPerformanceClassification =
+  | 'STRONG'
+  | 'STABLE'
+  | 'NEEDS_IMPROVEMENT'
+  | 'UNRELIABLE';
+
+export interface CodingInterviewQuestionSummary {
+  questionId: string;
+  title: string;
+  difficulty: InterviewDifficulty;
+  topic: string;
+  concepts: string[];
+  status: 'pending' | 'active' | 'completed';
+  passedCount: number;
+  totalCount: number;
+  fromMock: boolean;
+  hintsUsed: number;
+}
+
+export interface PublicCodingQuestion {
+  questionId: string;
+  problemId: string;
+  title: string;
+  difficulty: InterviewDifficulty;
+  topic: string;
+  concepts: string[];
+  generatedSource: 'ai' | 'template';
+  fromMock: boolean;
+  language: string;
+  startedAt: string | null;
+  problemStatement: string;
+  constraints: string[];
+  inputFormat: string;
+  outputFormat: string;
+  examples: Array<{ input: string; output: string; explanation?: string }>;
+  expectedComplexity: string;
+  visibleTestCases: Array<{ stdin: string; expected: string }>;
+  hiddenTestCount: number;
+  attemptsCount: number;
+  hintsUsed: number;
+  hintsAvailable: number;
+  completed: boolean;
+}
+
+export interface CodingInterviewStatus {
+  sessionId: string;
+  questionNumber: number;
+  targetQuestionCount: number;
+  currentDifficulty: InterviewDifficulty;
+  currentQuestionId: string | null;
+  startedAt: string | null;
+  completed: boolean;
+  questions: CodingInterviewQuestionSummary[];
+}
+
+export interface CodingInterviewQuestionReport {
+  questionId: string;
+  title: string;
+  difficulty: InterviewDifficulty;
+  topic: string;
+  concepts: string[];
+  classification: CodingPerformanceClassification;
+  status: 'pending' | 'active' | 'completed';
+  attempts: number;
+  hintsUsed: number;
+  passedCount: number;
+  totalCount: number;
+  hiddenPassedCount: number;
+  hiddenTotalCount: number;
+  timeTakenMs: number | null;
+  fromMock: boolean;
+  language: string;
+}
+
+export interface CodingInterviewMetrics {
+  questionsAttempted: number;
+  questionsSolved: number;
+  totalTestsPassed: number;
+  totalTests: number;
+  hiddenTestsPassed: number;
+  hiddenTests: number;
+  averageAttempts: number;
+  averageTimeMs: number;
+  masteredTopics: string[];
+  practiceTopics: string[];
+  strongAreas: string[];
+  weakAreas: string[];
+  overallScore: number;
+  hasReliableSignal: boolean;
+}
+
+export interface CodingInterviewReport {
+  metrics: CodingInterviewMetrics;
+  questions: CodingInterviewQuestionReport[];
+  verifiedQuestionCount: number;
+  mockQuestionCount: number;
+  hasVerifiedExecution: boolean;
+  language: string;
 }

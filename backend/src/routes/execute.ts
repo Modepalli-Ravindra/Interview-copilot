@@ -10,6 +10,7 @@
 import { Router, Request, Response } from 'express';
 import 'dotenv/config';
 import { updateSessionRecord } from './sessions';
+import { loadCodingInterviewState, findQuestion, appendAttempt } from '../services/codingStateManager';
 
 const router = Router();
 
@@ -131,6 +132,8 @@ router.post('/', async (req: Request, res: Response) => {
     expected_complexity,
     session_id,
     problem,
+    coding_interview_session_id,
+    coding_interview_question_id,
   }: {
     source_code?: string;
     language?: string;
@@ -145,12 +148,46 @@ router.post('/', async (req: Request, res: Response) => {
       tags?: string[];
       statement?: string;
     };
+    coding_interview_session_id?: string;
+    coding_interview_question_id?: string;
   } = req.body || {};
 
   const code = (source_code || '').trim();
   const lang = (language || 'python').toLowerCase();
-  const tests: TestCase[] = Array.isArray(test_cases) ? test_cases : [];
-  const hiddenTests: TestCase[] = Array.isArray(hidden_test_cases) ? hidden_test_cases : [];
+
+  // Phase 5 — coding-interview run: hidden tests are resolved server-side only,
+  // so the candidate can never see or inject them, and the attempt is appended
+  // to the interview state (never to the legacy practice `session.coding`).
+  let ciState: ReturnType<typeof loadCodingInterviewState> = null;
+  let ciQuestion: NonNullable<ReturnType<typeof findQuestion>> | null = null;
+  if (coding_interview_session_id) {
+    if (typeof coding_interview_session_id !== 'string' || typeof coding_interview_question_id !== 'string') {
+      return res.status(400).json({ success: false, error: 'coding_interview_session_id and coding_interview_question_id are required together' });
+    }
+    ciState = loadCodingInterviewState(coding_interview_session_id);
+    if (!ciState) {
+      return res.status(404).json({ success: false, error: 'No coding interview found for this session' });
+    }
+    ciQuestion = findQuestion(ciState, coding_interview_question_id);
+    if (!ciQuestion) {
+      return res.status(404).json({ success: false, error: 'Question not found in this coding interview' });
+    }
+    if (ciQuestion.completedAt) {
+      return res.status(409).json({ success: false, error: 'Question already completed' });
+    }
+  }
+
+  // Test resolution — server state wins for coding interviews.
+  const clientTests: TestCase[] = Array.isArray(test_cases) ? test_cases : [];
+  const serverTests: TestCase[] = ciQuestion ? ciQuestion.visibleTestCases || [] : [];
+  const tests: TestCase[] = ciQuestion
+    ? (serverTests.length > 0 ? serverTests : clientTests)
+    : clientTests;
+  const hiddenTests: TestCase[] = ciQuestion
+    ? ciQuestion.hiddenTestCases || []
+    : Array.isArray(hidden_test_cases)
+      ? hidden_test_cases
+      : [];
   const languageId = LANGUAGE_IDS[lang];
 
   if (!code) {
@@ -161,6 +198,28 @@ router.post('/', async (req: Request, res: Response) => {
   }
 
   const finish = (data: RunResult) => {
+    if (ciQuestion && ciState) {
+      try {
+        appendAttempt(ciState, ciQuestion.questionId, {
+          submittedCode: code.slice(0, 12000),
+          language: lang,
+          status: data.status,
+          passedCount: data.passedCount,
+          totalCount: data.totalCount,
+          visiblePassedCount: data.visiblePassedCount,
+          visibleTotalCount: data.visibleTotalCount,
+          hiddenPassedCount: data.hiddenPassedCount,
+          hiddenTotalCount: data.hiddenTotalCount,
+          executionTimeMs: data.timeMs,
+          memoryKb: data.memoryKb,
+          stderr: data.stderr ? data.stderr.slice(0, 4000) : null,
+          fromMock: data.fromMock,
+        });
+      } catch (err) {
+        console.warn('[Execute] failed to append coding-interview attempt:', (err as Error).message);
+      }
+      return res.json({ success: true, data });
+    }
     if (session_id) {
       try {
         updateSessionRecord(session_id, {

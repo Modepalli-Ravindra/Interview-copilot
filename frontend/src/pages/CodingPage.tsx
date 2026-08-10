@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   CheckCircle2, Circle, Flame, Code2,
-  Award, Target, Clock, Loader2, Sparkles,
+  Award, Target, Clock, Loader2, Sparkles, Brain, ArrowRight,
 } from 'lucide-react';
 import CodeWorkspace from '../components/interview/CodeWorkspace';
 import { useInterviewStore } from '../stores/interviewStore';
@@ -32,6 +33,7 @@ const fadePage = {
 const SOLVED_KEY = 'interviewpilot_solved_problems';
 
 export default function CodingPage() {
+  const navigate = useNavigate();
   const { updateCode, setEditorLanguage } = useInterviewStore();
   const [problems, setProblems] = useState<Problem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -170,16 +172,55 @@ export default function CodingPage() {
             Solve curated problems, run tests on a real sandbox, and build muscle memory.
           </p>
         </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '8px 16px', borderRadius: 10,
-          background: 'hsl(142 70% 50% / 0.1)',
-          border: '1px solid hsl(142 70% 50% / 0.25)',
-          color: 'hsl(142 70% 55%)', fontSize: 13, fontWeight: 600,
-        }}>
-          <Award size={15} /> {solvedCount}/{problems.length} solved
-        </div>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '8px 16px', borderRadius: 10,
+        background: 'hsl(142 70% 50% / 0.1)',
+        border: '1px solid hsl(142 70% 50% / 0.25)',
+        color: 'hsl(142 70% 55%)', fontSize: 13, fontWeight: 600,
+      }}>
+        <Award size={15} /> {solvedCount}/{problems.length} solved
       </div>
+    </div>
+
+      {/* Adaptive coding interview entry */}
+      <motion.button
+        whileHover={{ scale: 1.01 }}
+        whileTap={{ scale: 0.99 }}
+        onClick={() => navigate('/coding-interview')}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+          padding: '14px 18px', borderRadius: 14, cursor: 'pointer',
+          background: 'hsl(176 40% 45% / 0.08)',
+          border: '1px solid hsl(174 85% 60% / 0.25)',
+          fontFamily: 'var(--font-sans)', textAlign: 'left', marginBottom: 16,
+        }}
+      >
+        <div style={{
+          width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+          background: 'hsl(176 40% 45% / 0.15)',
+          border: '1px solid hsl(176 40% 45% / 0.3)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Brain size={17} color="hsl(174 85% 65%)" />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'hsl(174 85% 75%)' }}>
+            Full Coding Interview
+          </div>
+          <div style={{ fontSize: 12.5, color: 'hsl(210 10% 50%)', marginTop: 2 }}>
+            Questions grounded in your resume &amp; JD — adaptive difficulty, hints, hidden tests, and an end-of-interview report.
+          </div>
+        </div>
+        <span style={{
+          display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+          fontSize: 12.5, fontWeight: 700, padding: '8px 16px', borderRadius: 9,
+          background: 'linear-gradient(135deg, hsl(176 40% 42%), hsl(174 85% 55%))',
+          border: 'none', color: 'hsl(220 15% 5%)',
+        }}>
+          Start <ArrowRight size={13} />
+        </span>
+      </motion.button>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 12 }}>
         <p style={{ fontSize: 12.5, color: 'hsl(210 10% 48%)', margin: 0 }}>

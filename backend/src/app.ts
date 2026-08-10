@@ -15,6 +15,7 @@ import githubRouter from './routes/github';
 import intelligenceRouter from './routes/intelligence';
 import candidatesRouter from './routes/candidates';
 import codingRouter from './routes/coding';
+import codingInterviewRouter from './routes/codingInterview';
 
 const app = express();
 
@@ -65,6 +66,7 @@ app.use('/api/github',   apiLimiter, githubRouter);
 app.use('/api/intelligence', apiLimiter, intelligenceRouter);
 app.use('/api/candidates', apiLimiter, candidatesRouter);
 app.use('/api/coding',   apiLimiter, codingRouter);
+app.use('/api/coding-interview', apiLimiter, codingInterviewRouter);
 
 // Standard Error Fallback Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

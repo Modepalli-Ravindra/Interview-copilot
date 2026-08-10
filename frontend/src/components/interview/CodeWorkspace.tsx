@@ -24,10 +24,13 @@ interface CodeWorkspaceProps {
     tags?: string[];
     statement?: string;
   } | null;
+  /** Phase 5 — run inside a coding interview: hidden tests are resolved
+   *  server-side only and the attempt is recorded against the question. */
+  codingInterview?: { sessionId: string; questionId: string } | null;
   onAccepted?: () => void;
 }
 
-export default function CodeWorkspace({ testCases = [], hiddenTestCases, expectedComplexity, sessionId, problem, onAccepted }: CodeWorkspaceProps) {
+export default function CodeWorkspace({ testCases = [], hiddenTestCases, expectedComplexity, sessionId, problem, codingInterview, onAccepted }: CodeWorkspaceProps) {
   const {
     currentCode, editorLanguage, isRunningCode,
     lastCodeResult, updateCode, setEditorLanguage, setRunningCode, setCodeResult,
@@ -48,16 +51,24 @@ export default function CodeWorkspace({ testCases = [], hiddenTestCases, expecte
           source_code: currentCode,
           language: editorLanguage,
           test_cases: testCases,
-          hidden_test_cases: hiddenTestCases || [],
+          hidden_test_cases: codingInterview ? undefined : (hiddenTestCases || []),
           expected_complexity: expectedComplexity,
-          session_id: sessionId,
-          problem,
+          session_id: codingInterview ? undefined : sessionId,
+          problem: codingInterview ? undefined : problem,
+          coding_interview_session_id: codingInterview?.sessionId,
+          coding_interview_question_id: codingInterview?.questionId,
         }),
       });
       const json = await res.json();
       if (json.success && json.data) {
         setCodeResult(json.data);
-        if (onAccepted && json.data.status === 'ACCEPTED' && json.data.totalCount > 0 && json.data.passedCount === json.data.totalCount) {
+        if (
+          onAccepted &&
+          !json.data.fromMock &&
+          json.data.status === 'ACCEPTED' &&
+          json.data.totalCount > 0 &&
+          json.data.passedCount === json.data.totalCount
+        ) {
           onAccepted();
         }
       } else {

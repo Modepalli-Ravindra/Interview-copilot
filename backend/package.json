@@ -12,6 +12,8 @@
     "test:resumejd": "npm run build && node scripts/testResumeJdMatch.js",
     "test:smoke": "npm run build && node scripts/smokeIntelligence.js",
     "test:phase3": "npm run build && node scripts/smokePhase3.js",
+    "test:phase5": "npm run build && node scripts/smokePhase5.js",
+    "test:phase5metrics": "npm run build && node scripts/smokePhase5Metrics.js",
     "test:github": "npm run build && node scripts/testGithubAnalyzer.js"
   },
   "dependencies": {

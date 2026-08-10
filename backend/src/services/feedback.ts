@@ -14,6 +14,7 @@
  */
 
 import { createGatewaySession, sendGatewayMessage } from './aiGateway';
+import type { CodingInterviewReport } from './codingTypes';
 
 export type FeedbackSource = 'ai' | 'fallback' | 'mock';
 
@@ -74,6 +75,8 @@ export interface FeedbackReport {
   };
   /** Provenance: 'ai' = live model output, 'fallback' = derived (AI output invalid), 'mock' = no AI provider. */
   feedbackSource: FeedbackSource;
+  /** Server-computed coding-interview metrics + per-question report (Phase 5). */
+  codingInterview?: CodingInterviewReport | null;
   provider?: string | null;
   model?: string | null;
   gateway?: string | null;
@@ -116,6 +119,8 @@ export interface FeedbackInput {
   githubAnalysis?: string | null;
   /** Coding session context (problem, code, execution results), only when available. */
   coding?: CodingContext | null;
+  /** Server-computed coding-interview report (Phase 5). Numbers here are truth. */
+  codingInterview?: CodingInterviewReport | null;
 }
 
 const HR_DIMENSIONS = [
@@ -384,6 +389,73 @@ function summarizeTopic(text: string): string {
   return t.length > 48 ? `${t.slice(0, 48)}…` : t;
 }
 
+/**
+ * Overlay the server-computed coding-interview results onto a report.
+ * The deterministic metrics (score, topics) replace the AI/transcript
+ * heuristics whenever a coding interview took place, so the report always
+ * reflects the actual execution truth — the returned object is authoritative.
+ */
+export function applyCodingInterviewDerived(report: FeedbackReport, r: CodingInterviewReport | null | undefined): FeedbackReport {
+  if (!r) return report;
+  const m = r.metrics;
+  const reportHasAttempts = r.questions.some((q) => q.attempts > 0);
+  const verified = r.hasVerifiedExecution;
+
+  const strengths = [...report.strengths];
+  if (m.masteredTopics.length) {
+    strengths.push(`Verified mastery in: ${m.masteredTopics.slice(0, 3).join(', ')}`);
+  } else if (m.questionsSolved > 0) {
+    strengths.push(`Solved ${m.questionsSolved} coding question${m.questionsSolved > 1 ? 's' : ''} with passing tests.`);
+  }
+  const codingStrength = verified
+    ? `Passed ${m.totalTestsPassed}/${m.totalTests} tests across ${m.questionsAttempted} coding question${m.questionsAttempted === 1 ? '' : 's'}.`
+    : `${m.questionsAttempted} coding question${m.questionsAttempted === 1 ? '' : 's'} attempted (execution unverified).`;
+  if (reportHasAttempts) strengths.push(codingStrength);
+
+  const gaps = [...report.gaps];
+  for (const topic of m.practiceTopics.slice(0, 3)) {
+    if (!gaps.some((g) => g.topic.toLowerCase().includes(topic.toLowerCase()))) {
+      gaps.push({ topic, severity: 'MEDIUM', category: 'technical', details: `Missed or struggled with ${topic} during the coding interview.` });
+    }
+  }
+  if (verified && m.totalTests > 0 && m.totalTestsPassed < m.totalTests && !gaps.some((g) => g.details.includes('test'))) {
+    gaps.push({ topic: 'Test coverage', severity: 'MEDIUM', category: 'technical', details: `Failed ${m.totalTests - m.totalTestsPassed} of ${m.totalTests} tests — hunt edge cases before submitting.` });
+  }
+
+  const tips = [...report.tips];
+  if (!verified && reportHasAttempts) {
+    tips.unshift('Judge0 was unavailable during this session — re-run your solutions locally to confirm correctness.');
+  }
+  if (m.averageAttempts > 1.5) {
+    tips.unshift(`Averaged ${m.averageAttempts} submissions per question — dry-run your logic before hitting "Run".`);
+  }
+
+  const nextTopics = Array.from(new Set([...m.practiceTopics, ...report.nextTopics])).slice(0, 4);
+
+  const recommendedCodingPractice = [
+    ...m.practiceTopics.slice(0, 2).map((t) => `Re-solve ${t} problems and verify edge cases before running.`),
+    ...(verified && m.totalTests > m.totalTestsPassed
+      ? ['Reproduce each failing test locally and trace the input before fixing the code.']
+      : []),
+    `Time-box ${r.language} solutions and verify edge cases before running.`,
+  ].slice(0, 3);
+
+  return {
+    ...report,
+    score: m.overallScore,
+    dimensions: [
+      ...report.dimensions.filter((d) => d.label !== 'Coding'),
+      { label: 'Coding', value: m.overallScore },
+    ],
+    strengths,
+    gaps,
+    tips,
+    nextTopics,
+    recommendedCodingPractice,
+    codingInterview: r,
+  };
+}
+
 function deriveInterviewQuestions(input: FeedbackInput, gaps: FeedbackGap[], t: TranscriptMsg[]): string[] {
   const asked = new Set(extractAskedQuestions(t).map(normalizeQuestion));
   const items: string[] = [];
@@ -500,7 +572,7 @@ function deriveFromTranscript(
 
   const codingPerformance = buildCodingPerformance(input.coding);
 
-  return {
+  return applyCodingInterviewDerived({
     summary: `${input.role} interview (${input.mode}) at ${input.company} — ${interviewerTurns} questions over ${candidateTurns.length} answers. Strong areas held up well; ${gaps.length} gap${gaps.length > 1 ? 's' : ''} flagged for focused practice.`,
     score,
     dimensions,
@@ -521,7 +593,7 @@ function deriveFromTranscript(
     gateway: null,
     fallbackReason: meta.reason,
     generatedAt: new Date().toISOString(),
-  };
+  }, input.codingInterview);
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -594,6 +666,32 @@ function codingBlock(coding?: CodingContext | null): string[] {
   }
   lines.push('Hidden test cases are NOT included. Never reference hidden test case contents.');
   lines.push('</coding_session>');
+  return lines;
+}
+
+function codingInterviewBlock(r?: CodingInterviewReport | null): string[] {
+  if (!r) return [];
+  const m = r.metrics;
+  const lines: string[] = [
+    '',
+    '<coding_interview>',
+    `Questions attempted: ${m.questionsAttempted}; solved: ${m.questionsSolved}; overall score: ${m.overallScore}/100.`,
+    `Verified test results: ${m.totalTestsPassed}/${m.totalTests} passed (${m.hiddenTestsPassed}/${m.hiddenTests} hidden).`,
+    `Average attempts per question: ${m.averageAttempts}; average time: ${m.averageTimeMs}ms.`,
+    `Mastered topics: ${m.masteredTopics.join(', ') || '(none)'}; practice topics: ${m.practiceTopics.join(', ') || '(none)'}.`,
+  ];
+  if (r.hasVerifiedExecution) {
+    lines.push('Execution was verified by the judge. Use these numbers exactly — never invent test counts.');
+  } else {
+    lines.push('Execution was NOT verified (offline fallback). Do NOT claim tests passed or compute pass-rate-based conclusions.');
+  }
+  for (const q of r.questions) {
+    lines.push(
+      `Question: ${q.title} (${q.difficulty}, ${q.topic}) — status: ${q.status}; attempts: ${q.attempts}; hints: ${q.hintsUsed}; ` +
+        `tests: ${q.passedCount}/${q.totalCount} passed${q.fromMock ? ' [UNVERIFIED]' : ''}; classification: ${q.classification}.`,
+    );
+  }
+  lines.push('</coding_interview>');
   return lines;
 }
 
@@ -736,6 +834,7 @@ export async function generateFeedback(input: FeedbackInput): Promise<{ report: 
     `</session_context>`,
     ...contextBlock(input),
     ...codingBlock(input.coding),
+    ...codingInterviewBlock(input.codingInterview),
     ``,
     `<session_transcript>`,
     transcriptBlock,
@@ -759,7 +858,7 @@ export async function generateFeedback(input: FeedbackInput): Promise<{ report: 
 
   try {
     const completion = await sendGatewayMessage(session.gatewaySessionId, prompt);
-    const report = parseReport(completion.text, serverCoding);
+    let report = parseReport(completion.text, serverCoding);
     if (!report) {
       console.warn('[Feedback] AI returned unusable JSON; using derived report.');
       return {
@@ -767,10 +866,17 @@ export async function generateFeedback(input: FeedbackInput): Promise<{ report: 
         fromMock: true,
       };
     }
+    if (input.codingInterview) {
+      // Server-computed coding metrics are authoritative: they override the
+      // AI's score/dimensions so the report can never present a non-server
+      // number for coding performance.
+      report = applyCodingInterviewDerived(report, input.codingInterview);
+    }
     report.feedbackSource = 'ai';
     report.provider = completion.provider ?? null;
     report.model = completion.model ?? null;
     report.gateway = session.provider ?? null;
+    report.codingInterview = input.codingInterview ?? null;
     return { report: attachContext(report), fromMock: false };
   } catch (err) {
     console.warn('[Feedback] AI generation failed, using derived report:', (err as Error).message);
