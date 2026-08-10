@@ -8,7 +8,7 @@ import { SessionStore } from '../sessionStore';
 // or use a pg DATABASE_URL store which auto-creates it).
 // ──────────────────────────────────────────────────────────────
 
-function toRow(rec: Record<string, any>) {
+export function toRow(rec: Record<string, any>) {
   return {
     id: rec.id,
     mode: rec.mode ?? 'CODING',
@@ -18,6 +18,17 @@ function toRow(rec: Record<string, any>) {
     resume_text: rec.resumeText ?? '',
     jd_text: rec.jdText ?? '',
     github_summary: rec.githubSummary ?? '',
+    difficulty: rec.difficulty ?? 'Medium',
+    skills: rec.skills ?? [],
+    resume_profile: rec.resumeProfile ?? '',
+    jd_profile: rec.jdProfile ?? '',
+    resume_profile_data: rec.resumeProfileData ?? null,
+    jd_profile_data: rec.jdProfileData ?? null,
+    match_report: rec.matchReport ?? null,
+    coding: rec.coding ?? null,
+    resume_file_key: rec.resumeFileKey ?? null,
+    resume_file_url: rec.resumeFileUrl ?? null,
+    resume_file_name: rec.resumeFileName ?? null,
     status: rec.status ?? 'SETUP',
     created_at: rec.createdAt ?? new Date().toISOString(),
     started_at: rec.startedAt ?? null,
@@ -26,10 +37,14 @@ function toRow(rec: Record<string, any>) {
     feedback: rec.feedback ?? null,
     roadmap: rec.roadmap ?? null,
     transcript: rec.transcript ?? [],
+    project_profile_data: rec.projectProfileData ?? null,
+    project_index: rec.projectIndex ?? null,
+    github_analysis: rec.githubAnalysis ?? '',
+    github_analyzed_at: rec.githubAnalyzedAt ?? null,
   };
 }
 
-function fromRow(row: any): Record<string, any> {
+export function fromRow(row: any): Record<string, any> {
   return {
     id: row.id,
     mode: row.mode,
@@ -39,6 +54,17 @@ function fromRow(row: any): Record<string, any> {
     resumeText: row.resume_text,
     jdText: row.jd_text,
     githubSummary: row.github_summary,
+    difficulty: row.difficulty ?? 'Medium',
+    skills: row.skills ?? [],
+    resumeProfile: row.resume_profile ?? '',
+    jdProfile: row.jd_profile ?? '',
+    resumeProfileData: row.resume_profile_data ?? null,
+    jdProfileData: row.jd_profile_data ?? null,
+    matchReport: row.match_report ?? null,
+    coding: row.coding ?? null,
+    resumeFileKey: row.resume_file_key ?? null,
+    resumeFileUrl: row.resume_file_url ?? null,
+    resumeFileName: row.resume_file_name ?? null,
     status: row.status,
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
     startedAt: row.started_at ? new Date(row.started_at).toISOString() : null,
@@ -47,6 +73,10 @@ function fromRow(row: any): Record<string, any> {
     feedback: row.feedback,
     roadmap: row.roadmap,
     transcript: row.transcript ?? [],
+    projectProfileData: row.project_profile_data ?? null,
+    projectIndex: row.project_index ?? null,
+    githubAnalysis: row.github_analysis ?? '',
+    githubAnalyzedAt: row.github_analyzed_at ? new Date(row.github_analyzed_at).toISOString() : null,
   };
 }
 

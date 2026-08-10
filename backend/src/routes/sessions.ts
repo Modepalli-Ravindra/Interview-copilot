@@ -2,8 +2,41 @@ import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { createSessionStore, SessionStore } from '../services/sessionStore';
 import { createJsonStore } from '../services/stores/jsonStore';
+import { parseResumeText, summarizeResumeProfile, sanitizeResumeProfile, type ResumeProfile } from '../services/resumeParser';
+import { parseJdText, summarizeJdProfile, sanitizeJdProfile, type JdProfile } from '../services/jdParser';
+import { matchResumeToJd, type MatchResult } from '../services/matchEngine';
+import { summarizeProjectProfile, type ProjectProfile } from '../services/repoAnalyzer';
 
 const router = Router();
+
+function isResumeProfile(v: unknown): v is ResumeProfile {
+  return !!v && typeof v === 'object' && typeof (v as ResumeProfile).personal === 'object';
+}
+
+function isJdProfile(v: unknown): v is JdProfile {
+  return !!v && typeof v === 'object' && typeof (v as JdProfile).role === 'string';
+}
+
+function isMatchReport(v: unknown): v is MatchResult {
+  return (
+    !!v &&
+    typeof v === 'object' &&
+    typeof (v as MatchResult).overallMatch === 'number' &&
+    Array.isArray((v as MatchResult).matchedSkills) &&
+    Array.isArray((v as MatchResult).missingSkills)
+  );
+}
+
+function isProjectProfile(v: unknown): v is ProjectProfile {
+  return (
+    !!v &&
+    typeof v === 'object' &&
+    typeof (v as ProjectProfile).fullName === 'string' &&
+    typeof (v as ProjectProfile).repoUrl === 'string' &&
+    !!v &&
+    typeof (v as ProjectProfile).technologyProfile === 'object'
+  );
+}
 
 // ──────────────────────────────────────────────────────────────
 // Session store — Postgres (Supabase) when DATABASE_URL is set,
@@ -63,7 +96,7 @@ export async function flushSessionStore(): Promise<void> {
 }
 
 // POST /api/sessions — create a new interview session
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const {
     mode = 'CODING',
     role,
@@ -72,31 +105,155 @@ router.post('/', (req: Request, res: Response) => {
     resumeText,
     jdText,
     githubSummary,
+    difficulty,
+    skills: clientSkills,
+    resumeProfile: clientResumeProfile,
+    jdProfile: clientJdProfile,
+    resumeProfileData: clientResumeProfileData,
+    jdProfileData: clientJdProfileData,
+    matchReport: clientMatchReport,
+    resumeFileKey,
+    resumeFileUrl,
+    resumeFileName,
+    projectProfileData: clientProjectProfileData,
   } = req.body || {};
 
   // Input validation / payload caps
-  const VALID_MODES = ['CODING', 'TECHNICAL', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT'];
+  const VALID_MODES = [
+    'CODING', 'TECHNICAL', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT',
+    'HR', 'MIXED', 'RESUME_BASED', 'JD_BASED', 'SKILLS_BASED',
+  ];
+  const VALID_DIFFICULTIES = ['Easy', 'Medium', 'Hard'];
   const cap = (v: unknown, max: number): string => {
     if (typeof v !== 'string') return '';
     return v.slice(0, max);
   };
+  const capArray = (v: unknown, maxItems: number, maxLen: number): string[] => {
+    if (!Array.isArray(v)) return [];
+    return v
+      .filter((x): x is string => typeof x === 'string')
+      .slice(0, maxItems)
+      .map((x) => x.slice(0, maxLen));
+  };
   if (mode && !VALID_MODES.includes(mode)) {
     return res.status(400).json({ success: false, error: `mode must be one of ${VALID_MODES.join(', ')}` });
+  }
+  if (difficulty && !VALID_DIFFICULTIES.includes(difficulty)) {
+    return res.status(400).json({ success: false, error: `difficulty must be one of ${VALID_DIFFICULTIES.join(', ')}` });
   }
   if (mode === 'CODING' && typeof resumeText === 'string' && resumeText.length > 100000) {
     return res.status(413).json({ success: false, error: 'resumeText is too large' });
   }
 
   const sessionId = randomUUID();
+
+  // Deterministic profile extraction — canonical skills + structured summaries
+  // used by the interview engine to ground questions in the actual content.
+  let skills: string[] = [];
+  let resumeProfile = '';
+  let jdProfile = '';
+  let resumeProfileData: ResumeProfile | null = null;
+  let jdProfileData: JdProfile | null = null;
+  let matchReport: MatchResult | null = null;
+  try {
+    if (resumeText && typeof resumeText === 'string' && resumeText.trim()) {
+      const rp = parseResumeText(resumeText, 'Resume');
+      skills = rp.skills.slice(0, 20);
+      resumeProfile = summarizeResumeProfile(rp);
+      if (!isResumeProfile(clientResumeProfileData)) resumeProfileData = rp;
+    }
+    if (jdText && typeof jdText === 'string' && jdText.trim()) {
+      const jd = await parseJdText(jdText, typeof company === 'string' ? company : 'Unknown');
+      jdProfile = summarizeJdProfile(jd);
+      if (!isJdProfile(clientJdProfileData)) jdProfileData = jd;
+    }
+  } catch (err) {
+    console.warn('[Sessions] profile extraction failed:', (err as Error).message);
+  }
+  // Allow clients to override the deterministic extraction with richer input.
+  if (Array.isArray(clientSkills) && clientSkills.length) skills = capArray(clientSkills, 20, 100);
+  if (typeof clientResumeProfile === 'string' && clientResumeProfile.trim()) resumeProfile = cap(clientResumeProfile, 4000);
+  if (typeof clientJdProfile === 'string' && clientJdProfile.trim()) jdProfile = cap(clientJdProfile, 4000);
+  if (isResumeProfile(clientResumeProfileData)) {
+    resumeProfileData = clientResumeProfileData;
+    resumeProfile = cap(summarizeResumeProfile(clientResumeProfileData), 4000);
+  }
+  if (isJdProfile(clientJdProfileData)) {
+    jdProfileData = clientJdProfileData;
+    jdProfile = cap(summarizeJdProfile(clientJdProfileData), 4000);
+  }
+
+  // Deterministic resume<->JD match — computed server-side whenever both
+  // structured profiles are available (clients may pass a richer report).
+  if (isMatchReport(clientMatchReport)) {
+    matchReport = clientMatchReport;
+  } else if (resumeProfileData && jdProfileData) {
+    try {
+      matchReport = matchResumeToJd(resumeProfileData, jdProfileData);
+    } catch (err) {
+      console.warn('[Sessions] match computation failed:', (err as Error).message);
+    }
+  }
+
+  // Structured GitHub project profile (Phase 4) — when present the interview
+  // engine automatically receives a rich githubSummary derived from it.
+  let projectProfileData: ProjectProfile | null = null;
+  let projectIndex: unknown[] | null = null;
+  let githubAnalysis = '';
+  let githubAnalyzedAt: string | null = null;
+  let effectiveGithubSummary = typeof githubSummary === 'string' ? githubSummary : '';
+  if (isProjectProfile(clientProjectProfileData)) {
+    projectProfileData = clientProjectProfileData;
+    githubAnalysis = summarizeProjectProfile({
+      fullName: clientProjectProfileData.fullName,
+      description: clientProjectProfileData.description,
+      primaryLanguage: clientProjectProfileData.primaryLanguage,
+      languages: clientProjectProfileData.languages,
+      tech: clientProjectProfileData.technologyProfile,
+      arch: clientProjectProfileData.architecture,
+      readme: clientProjectProfileData.readme,
+    });
+    if (Array.isArray(clientProjectProfileData.projectIndex)) projectIndex = clientProjectProfileData.projectIndex;
+    githubAnalyzedAt = clientProjectProfileData.analyzedAt || new Date().toISOString();
+    effectiveGithubSummary = githubAnalysis;
+  }
+
+  // Candidate identity — clients may pass an explicit candidateId; otherwise
+  // derive it from the resume email so interviews by the same person group
+  // together for the candidates/pipeline view.
+  const candidateEmail = cap(resumeProfileData?.personal?.email, 200);
+  const candidateName = cap(resumeProfileData?.personal?.name, 200);
+  const requestedCandidateId = cap(candidateId, 100);
+  const finalCandidateId =
+    requestedCandidateId && requestedCandidateId !== 'anonymous'
+      ? requestedCandidateId
+      : (candidateEmail ? candidateEmail.toLowerCase() : 'anonymous');
+
   const session = {
     id: sessionId,
     mode: mode || 'CODING',
+    difficulty: difficulty || 'Medium',
     role: cap(role, 200) || 'Software Engineer',
     company: cap(company, 200) || 'Unknown',
-    candidateId: cap(candidateId, 100) || 'anonymous',
+    candidateId: finalCandidateId,
+    candidateName,
+    candidateEmail,
     resumeText: cap(resumeText, 100000),
     jdText: cap(jdText, 100000),
-    githubSummary: cap(githubSummary, 50000),
+    githubSummary: cap(effectiveGithubSummary, 50000),
+    skills: capArray(skills, 20, 100),
+    resumeProfile: cap(resumeProfile, 4000),
+    jdProfile: cap(jdProfile, 4000),
+    resumeProfileData: resumeProfileData ? sanitizeResumeProfile(resumeProfileData) : null,
+    jdProfileData: jdProfileData ? sanitizeJdProfile(jdProfileData) : null,
+    matchReport,
+    resumeFileKey: cap(resumeFileKey, 500) || null,
+    resumeFileUrl: cap(resumeFileUrl, 500) || null,
+    resumeFileName: cap(resumeFileName, 200) || null,
+    projectProfileData,
+    projectIndex,
+    githubAnalysis,
+    githubAnalyzedAt,
     status: 'SETUP',
     createdAt: new Date().toISOString(),
     score: null,

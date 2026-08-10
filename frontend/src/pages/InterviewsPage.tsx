@@ -4,14 +4,16 @@ import { useNavigate } from 'react-router-dom';
 import {
   Mic, Code2, Layers, GitBranch, MessageSquare, Cpu,
   Sparkles, ChevronDown, Play, Clock, TrendingUp, ArrowRight,
-  FileText, UploadCloud, Loader2, X, Link2, Unplug, AlignLeft,
+  FileText, UploadCloud, Loader2, X, Link2, Unplug, AlignLeft, Target,
 } from 'lucide-react';
-import type { InterviewSession, GitHubProfile, RepoDetail } from '../types';
+import type { InterviewSession, GitHubProfile, RepoDetail, ResumeProfile, JdProfile, MatchReport } from '../types';
 import { apiFetch } from '../lib/api';
 
-type InterviewMode = 'CODING' | 'BEHAVIORAL' | 'SYSTEM_DESIGN' | 'PROJECT' | 'TECHNICAL';
+type InterviewMode = 'CODING' | 'BEHAVIORAL' | 'SYSTEM_DESIGN' | 'PROJECT' | 'TECHNICAL' | 'HR' | 'MIXED' | 'RESUME_BASED' | 'JD_BASED' | 'SKILLS_BASED';
+type InterviewDifficulty = 'Easy' | 'Medium' | 'Hard';
 
 const DEEP_SCAN_REPO_COUNT = 2;
+const MATCH_CONTEXT_KEY = 'interviewpilot_match_context';
 
 const GithubIcon = ({ size = 18 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -34,6 +36,11 @@ const modes: { key: InterviewMode; label: string; desc: string; icon: typeof Cod
   { key: 'BEHAVIORAL',     label: 'Behavioral',     desc: 'STAR stories & soft skills',    icon: MessageSquare },
   { key: 'SYSTEM_DESIGN',  label: 'System Design',  desc: 'Architecture & scalability',    icon: Layers },
   { key: 'PROJECT',        label: 'Project',        desc: 'GitHub deep dive',             icon: GitBranch },
+  { key: 'HR',             label: 'HR',             desc: 'Realistic HR round',           icon: MessageSquare },
+  { key: 'MIXED',          label: 'Mixed',          desc: 'HR + technical + project',     icon: Sparkles },
+  { key: 'RESUME_BASED',   label: 'Resume-based',   desc: 'Drill into every resume claim', icon: FileText },
+  { key: 'JD_BASED',       label: 'JD-based',       desc: 'Map answers to the job',       icon: AlignLeft },
+  { key: 'SKILLS_BASED',   label: 'Skills-based',   desc: 'One skill drilled at a time',  icon: Cpu },
 ];
 
 const modeColor: Record<InterviewMode, string> = {
@@ -42,6 +49,11 @@ const modeColor: Record<InterviewMode, string> = {
   BEHAVIORAL:     'hsl(35 90% 55%)',
   SYSTEM_DESIGN:  'hsl(215 80% 60%)',
   PROJECT:        'hsl(280 70% 65%)',
+  HR:             'hsl(160 70% 60%)',
+  MIXED:          'hsl(48 95% 55%)',
+  RESUME_BASED:   'hsl(200 85% 60%)',
+  JD_BASED:       'hsl(10 85% 62%)',
+  SKILLS_BASED:   'hsl(285 75% 66%)',
 };
 
 const scoreColor = (s: number) =>
@@ -58,16 +70,21 @@ export default function InterviewsPage() {
   const [selectedMode, setSelectedMode] = useState<InterviewMode>('CODING');
   const [role, setRole] = useState('');
   const [company, setCompany] = useState('');
-  const [difficulty, setDifficulty] = useState('Senior');
+  const [difficulty, setDifficulty] = useState<InterviewDifficulty>('Medium');
   const [filter, setFilter] = useState<'ALL' | InterviewMode>('ALL');
   const [showDifficulty, setShowDifficulty] = useState(false);
 
   // Context: resume, GitHub, JD
   const resumeInputRef = useRef<HTMLInputElement>(null);
-  const [resume, setResume] = useState<{ name: string; size: string; chars: number; content: string } | null>(null);
+  const [resume, setResume] = useState<{ name: string; size: string; chars: number; content: string; fileKey?: string | null; fileUrl?: string | null } | null>(null);
   const [isParsingResume, setIsParsingResume] = useState(false);
   const [showResumePaste, setShowResumePaste] = useState(false);
   const [resumeDraft, setResumeDraft] = useState('');
+  const [resumeProfileData, setResumeProfileData] = useState<ResumeProfile | null>(null);
+  const jdInputRef = useRef<HTMLInputElement>(null);
+  const [jdParsing, setJdParsing] = useState(false);
+  const [jdProfileData, setJdProfileData] = useState<JdProfile | null>(null);
+  const [matchReport, setMatchReport] = useState<MatchReport | null>(null);
   const [githubUsername, setGithubUsername] = useState('');
   const [github, setGithub] = useState<{ connecting: boolean; connected: boolean; profile: GitHubProfile | null; error: string | null }>({ connecting: false, connected: false, profile: null, error: null });
   const [repoDetails, setRepoDetails] = useState<RepoDetail[]>([]);
@@ -97,6 +114,35 @@ export default function InterviewsPage() {
   useEffect(() => {
     fetchSessions();
   }, [fetchSessions]);
+
+  // Import context handed off from the Resume-vs-JD match page, if any.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(MATCH_CONTEXT_KEY);
+      if (!raw) return;
+      window.localStorage.removeItem(MATCH_CONTEXT_KEY);
+      const ctx = JSON.parse(raw);
+      if (typeof ctx.resumeText === 'string' && ctx.resumeText.trim()) {
+        setResume({
+          name: ctx.resumeFileName || 'Resume (from match analysis)',
+          size: formatFileSize(ctx.resumeText.length),
+          chars: ctx.resumeText.length,
+          content: ctx.resumeText,
+          fileKey: ctx.resumeFileKey || null,
+          fileUrl: ctx.resumeFileUrl || null,
+        });
+      }
+      if (ctx.resumeProfile) setResumeProfileData(ctx.resumeProfile as ResumeProfile);
+      if (typeof ctx.jdText === 'string' && ctx.jdText.trim()) setJd(ctx.jdText);
+      if (ctx.jdProfile) setJdProfileData(ctx.jdProfile as JdProfile);
+      if (ctx.matchReport) setMatchReport(ctx.matchReport as MatchReport);
+      if (typeof ctx.role === 'string') setRole(ctx.role);
+      if (typeof ctx.company === 'string') setCompany(ctx.company);
+    } catch (err) {
+      console.warn('[Interviews] match context import failed:', err);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const lightSummary = github.profile
     ? `${github.profile.name || github.profile.username}: ${github.profile.publicRepos} public repos, ${github.profile.totalStars} stars. Top languages: ${github.profile.topLanguages.slice(0, 4).join(', ') || 'n/a'}. Top repos: ${github.profile.topRepos.slice(0, 3).map(r => r.name).join(', ') || 'n/a'}`
@@ -141,11 +187,18 @@ export default function InterviewsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode: selectedMode,
+          difficulty,
           role: role || 'Software Engineer',
           company: company || 'Company',
           resumeText: resume?.content || '',
           jdText: jd,
           githubSummary: summary,
+          resumeProfileData: resumeProfileData || undefined,
+          jdProfileData: jdProfileData || undefined,
+          matchReport: matchReport || undefined,
+          resumeFileKey: resume?.fileKey || undefined,
+          resumeFileUrl: resume?.fileUrl || undefined,
+          resumeFileName: resume?.fileKey ? resume.name : undefined,
         }),
       });
       const json = await res.json();
@@ -167,24 +220,36 @@ export default function InterviewsPage() {
       ? `${(bytes / 1048576).toFixed(1)} MB`
       : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
-  const handleResumeUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsParsingResume(true);
     setResume(null);
+    setResumeProfileData(null);
     setShowResumePaste(false);
-    const reader = new FileReader();
-    reader.onload = () => {
-      const content = String(reader.result || '').trim();
-      setResume({ name: file.name, size: formatFileSize(file.size), chars: content.length, content });
-      setIsParsingResume(false);
-    };
-    reader.onerror = () => {
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await apiFetch('/api/intelligence/resume', { method: 'POST', body: form });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Resume parsing failed');
+      const content = String(json.data.text || '');
+      setResume({
+        name: file.name,
+        size: formatFileSize(file.size),
+        chars: content.length,
+        content,
+        fileKey: json.data.resumeFileKey || null,
+        fileUrl: json.data.resumeFileUrl || null,
+      });
+      setResumeProfileData(json.data.profile || null);
+    } catch (err) {
+      console.error('[Interviews] resume parse failed:', err);
       setResume({ name: file.name, size: formatFileSize(file.size), chars: 0, content: '' });
+    } finally {
       setIsParsingResume(false);
-    };
-    reader.readAsText(file);
-    e.target.value = '';
+      e.target.value = '';
+    }
   };
 
   const applyResumeText = (text: string) => {
@@ -197,7 +262,30 @@ export default function InterviewsPage() {
         chars: content.length,
         content,
       });
+      setResumeProfileData(null);
       setShowResumePaste(false);
+    }
+  };
+
+  const handleJdUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setJdParsing(true);
+    setJd('');
+    setJdProfileData(null);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await apiFetch('/api/intelligence/jd', { method: 'POST', body: form });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'JD parsing failed');
+      setJd(String(json.data.text || ''));
+      setJdProfileData(json.data.profile || null);
+    } catch (err) {
+      console.error('[Interviews] JD parse failed:', err);
+    } finally {
+      setJdParsing(false);
+      e.target.value = '';
     }
   };
 
@@ -413,7 +501,7 @@ export default function InterviewsPage() {
                   boxShadow: '0 8px 24px hsl(220 15% 3% / 0.7)',
                 }}
               >
-                {['Junior', 'Mid-level', 'Senior', 'Staff+'].map(lvl => (
+                {(['Easy', 'Medium', 'Hard'] as const).map(lvl => (
                   <button
                     key={lvl}
                     onClick={() => { setDifficulty(lvl); setShowDifficulty(false); }}
@@ -489,7 +577,7 @@ export default function InterviewsPage() {
               <input
                 ref={resumeInputRef}
                 type="file"
-                accept=".txt,.md,.json"
+                accept=".pdf,.txt,.md"
                 style={{ display: 'none' }}
                 onChange={handleResumeUpload}
               />
@@ -526,7 +614,7 @@ export default function InterviewsPage() {
                       </p>
                     </div>
                     <button
-                      onClick={() => { setResume(null); setShowResumePaste(false); setResumeDraft(''); setAnalysis(null); }}
+                      onClick={() => { setResume(null); setResumeProfileData(null); setShowResumePaste(false); setResumeDraft(''); setAnalysis(null); }}
                       title="Remove resume"
                       style={{
                         background: 'none', border: 'none', cursor: 'pointer', padding: 4, flexShrink: 0,
@@ -577,7 +665,7 @@ export default function InterviewsPage() {
                       Upload Resume
                     </p>
                     <p style={{ fontSize: 11.5, color: 'hsl(210 10% 48%)', lineHeight: 1.5 }}>
-                      TXT or MD · powers real-time personalized questions
+                      PDF, TXT or MD · powers real-time personalized questions
                     </p>
                   </button>
                   <button
@@ -773,9 +861,70 @@ export default function InterviewsPage() {
                     </span>
                   </p>
                   <p style={{ fontSize: 11.5, color: 'hsl(210 10% 48%)' }}>
-                    Paste the JD to match questions to the role
+                    Paste the JD or upload a file to match questions to the role
                   </p>
                 </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <input
+                  ref={jdInputRef}
+                  type="file"
+                  accept=".pdf,.txt,.md"
+                  style={{ display: 'none' }}
+                  onChange={handleJdUpload}
+                />
+                <button
+                  onClick={() => jdInputRef.current?.click()}
+                  disabled={jdParsing}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '6px 12px', borderRadius: 8, cursor: jdParsing ? 'wait' : 'pointer',
+                    background: 'hsl(174 85% 60% / 0.08)', color: 'hsl(174 85% 70%)',
+                    border: '1px solid hsl(174 85% 60% / 0.3)',
+                    fontSize: 11.5, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                  }}
+                >
+                  {jdParsing ? (
+                    <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.9, ease: 'linear' }}>
+                      <Loader2 size={12} />
+                    </motion.div>
+                  ) : (
+                    <UploadCloud size={12} />
+                  )}
+                  {jdParsing ? 'Parsing…' : 'Upload JD'}
+                </button>
+                {jdProfileData && (
+                  <>
+                    <span style={{
+                      fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em',
+                      padding: '3px 9px', borderRadius: 999,
+                      color: 'hsl(174 85% 65%)', background: 'hsl(174 85% 60% / 0.1)',
+                      border: '1px solid hsl(174 85% 60% / 0.3)',
+                    }}>
+                      {jdProfileData.requiredSkills.length} required skills parsed
+                    </span>
+                    {jdProfileData.location && (
+                      <span style={{
+                        fontSize: 10.5, fontWeight: 600,
+                        padding: '3px 9px', borderRadius: 999,
+                        color: 'hsl(210 10% 62%)', background: 'hsl(215 15% 13%)',
+                        border: '1px solid hsl(215 15% 20%)',
+                      }}>
+                        {jdProfileData.location}
+                      </span>
+                    )}
+                    {jdProfileData.educationRequirements.slice(0, 1).map(e => (
+                      <span key={e} style={{
+                        fontSize: 10.5, fontWeight: 600,
+                        padding: '3px 9px', borderRadius: 999,
+                        color: 'hsl(210 10% 62%)', background: 'hsl(215 15% 13%)',
+                        border: '1px solid hsl(215 15% 20%)',
+                      }}>
+                        {e}
+                      </span>
+                    ))}
+                  </>
+                )}
               </div>
               <textarea
                 value={jd}
@@ -792,6 +941,22 @@ export default function InterviewsPage() {
               />
             </div>
           </div>
+
+          {/* Match analysis chip (from Resume vs JD page) */}
+          {matchReport && (
+            <div style={{
+              marginTop: 14, display: 'flex', alignItems: 'center', gap: 10,
+              padding: '11px 14px', borderRadius: 10,
+              background: 'hsl(174 85% 60% / 0.08)', border: '1px solid hsl(174 85% 60% / 0.25)',
+            }}>
+              <Target size={15} color="hsl(174 85% 70%)" style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: 12.5, color: 'hsl(210 10% 72%)', lineHeight: 1.5 }}>
+                Resume–JD fit: <b style={{ color: scoreColor(matchReport.overallMatch) }}>{matchReport.overallMatch}% overall</b>
+                {' · '}skill {matchReport.skillMatch}%{matchReport.matchedSkills.length > 0 ? ` · ${matchReport.matchedSkills.length} matched` : ''}
+                {matchReport.missingSkills.length > 0 ? ` · ${matchReport.missingSkills.length} missing` : ''}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Project deep-scan toggle */}
@@ -917,7 +1082,7 @@ export default function InterviewsPage() {
           Your Interviews
         </h2>
         <div style={{ display: 'flex', gap: 4, background: 'hsl(215 15% 8%)', padding: 4, borderRadius: 10, border: '1px solid hsl(215 15% 16%)' }}>
-          {(['ALL', 'CODING', 'TECHNICAL', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT'] as const).map(f => (
+          {(['ALL', 'CODING', 'TECHNICAL', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT', 'HR', 'MIXED', 'RESUME_BASED', 'JD_BASED', 'SKILLS_BASED'] as const).map(f => (
             <button
               key={f}
               onClick={() => setFilter(f)}

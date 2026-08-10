@@ -1,6 +1,15 @@
 import { Router, Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  analyzeProject,
+  compareResumeToGithub,
+  assessProjectRelevance,
+  retrieveProjectContext,
+  getCachedRepoAnalysis,
+  RepoAnalysisError,
+  type ProjectProfile,
+} from '../services/repoAnalyzer';
 
 const router = Router();
 
@@ -49,6 +58,7 @@ const CACHE_FILE = path.join(DATA_DIR, 'github-cache.json');
 const CACHE_TTL_MS = 60 * 60 * 1000;
 
 const cache = new Map<string, { fetchedAt: number; detail: RepoDetail }>();
+const profileCache = new Map<string, { fetchedAt: number; profile: Record<string, any> }>();
 
 function loadCache() {
   try {
@@ -57,6 +67,9 @@ function loadCache() {
     for (const entry of Array.isArray(parsed) ? parsed : []) {
       if (entry?.key && entry?.fetchedAt && entry?.detail?.name) {
         cache.set(entry.key, { fetchedAt: entry.fetchedAt, detail: entry.detail });
+      }
+      if (entry?.key && entry?.fetchedAt && entry?.profile?.username) {
+        profileCache.set(entry.key, { fetchedAt: entry.fetchedAt, profile: entry.profile });
       }
     }
   } catch (err) {
@@ -70,8 +83,9 @@ function persistCache() {
   saveTimer = setTimeout(() => {
     try {
       fs.mkdirSync(DATA_DIR, { recursive: true });
-      const entries = Array.from(cache.entries()).map(([key, v]) => ({ key, ...v }));
-      fs.writeFileSync(CACHE_FILE, JSON.stringify(entries, null, 2));
+      const repoEntries = Array.from(cache.entries()).map(([key, v]) => ({ key, ...v }));
+      const profileEntries = Array.from(profileCache.entries()).map(([key, v]) => ({ key, ...v }));
+      fs.writeFileSync(CACHE_FILE, JSON.stringify([...repoEntries, ...profileEntries], null, 2));
     } catch (err) {
       console.error('[GitHub] Failed to persist repo cache:', (err as Error).message);
     }
@@ -154,6 +168,12 @@ router.get('/:username', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'Invalid GitHub username' });
   }
 
+  const cacheKey = `profile:${username.toLowerCase()}`;
+  const cachedProfile = profileCache.get(cacheKey);
+  if (cachedProfile && Date.now() - cachedProfile.fetchedAt < CACHE_TTL_MS) {
+    return res.json({ success: true, data: cachedProfile.profile, cached: true });
+  }
+
   try {
     const [userRes, reposRes] = await Promise.all([
       fetch(`${GH_API}/users/${username}`, { headers: HEADERS }),
@@ -201,20 +221,22 @@ router.get('/:username', async (req: Request, res: Response) => {
         url: r.html_url,
       }));
 
-    res.json({
-      success: true,
-      data: {
-        username: user.login,
-        name: user.name || user.login,
-        avatar: user.avatar_url,
-        bio: user.bio || '',
-        followers: user.followers ?? 0,
-        publicRepos: user.public_repos ?? 0,
-        topLanguages,
-        topRepos,
-        totalStars,
-      },
-    });
+    const profile = {
+      username: user.login,
+      name: user.name || user.login,
+      avatar: user.avatar_url,
+      bio: user.bio || '',
+      followers: user.followers ?? 0,
+      publicRepos: user.public_repos ?? 0,
+      topLanguages,
+      topRepos,
+      totalStars,
+    };
+
+    profileCache.set(cacheKey, { fetchedAt: Date.now(), profile });
+    persistCache();
+
+    res.json({ success: true, data: profile, cached: false });
   } catch (err) {
     console.error('[GitHub] lookup failed:', (err as Error).message);
     res.status(502).json({ success: false, error: 'GitHub API unreachable' });
@@ -323,5 +345,123 @@ router.get('/:username/:repo', async (req: Request, res: Response) => {
     res.status(502).json({ success: false, error: 'GitHub API unreachable' });
   }
 });
+
+// ──────────────────────────────────────────────────────────────
+// POST /api/github/analyze — full ProjectProfile analysis of a repo
+// URL. Deterministic (no LLM). Optional resume/JD profiles trigger the
+// consistency + relevance reports. Errors are mapped to a taxonomy:
+//   400 INVALID_URL · 404 NOT_FOUND · 403 PRIVATE · 429 RATE_LIMITED ·
+//   422 EMPTY · 502 FETCH
+// ──────────────────────────────────────────────────────────────
+router.post('/analyze', async (req: Request, res: Response) => {
+  const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+  const resumeProfileData = req.body?.resumeProfileData;
+  const jdProfileData = req.body?.jdProfileData;
+
+  if (!url) {
+    return res.status(400).json({
+      success: false,
+      error: 'A repository URL is required (https://github.com/owner/repo)',
+      code: 'INVALID_URL',
+    });
+  }
+
+  try {
+    const profile = await analyzeProject(url);
+    const data: {
+      profile: ProjectProfile;
+      consistency?: ReturnType<typeof compareResumeToGithub>;
+      relevance?: ReturnType<typeof assessProjectRelevance>;
+      fromCache: boolean;
+    } = {
+      profile,
+      fromCache: !!getCachedRepoAnalysis(url),
+    };
+
+    if (isResumeProfileLike(resumeProfileData)) {
+      data.consistency = compareResumeToGithub(resumeProfileData.skills || [], profile);
+    }
+    if (isJdProfileLike(jdProfileData)) {
+      data.relevance = assessProjectRelevance(jdProfileData.requiredSkills || [], profile);
+    }
+
+    res.json({ success: true, data });
+  } catch (err) {
+    sendRepoError(res, err);
+  }
+});
+
+// POST /api/github/retrieve — focused retrieval context for a question.
+// Accepts an already-analyzed profile (client-side) or a repo URL.
+router.post('/retrieve', async (req: Request, res: Response) => {
+  const question = typeof req.body?.question === 'string' ? req.body.question.trim() : '';
+  const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+
+  if (!question) {
+    return res.status(400).json({ success: false, error: 'A question is required', code: 'INVALID_URL' });
+  }
+
+  try {
+    const profile = isProjectProfileLike(req.body?.profile)
+      ? (req.body.profile as ProjectProfile)
+      : url
+        ? await analyzeProject(url)
+        : null;
+    if (!profile) {
+      return res.status(400).json({ success: false, error: 'A repo URL or analyzed profile is required', code: 'INVALID_URL' });
+    }
+    const context = retrieveProjectContext(question, profile);
+    res.json({ success: true, data: context });
+  } catch (err) {
+    sendRepoError(res, err);
+  }
+});
+
+// POST /api/github/questions — the evidence-grounded question bank for a repo.
+router.post('/questions', async (req: Request, res: Response) => {
+  const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+  if (!url) {
+    return res.status(400).json({ success: false, error: 'A repository URL is required', code: 'INVALID_URL' });
+  }
+  try {
+    const profile = isProjectProfileLike(req.body?.profile)
+      ? (req.body.profile as ProjectProfile)
+      : await analyzeProject(url);
+    res.json({
+      success: true,
+      data: { questions: profile.questions, followUps: profile.followUps, categories: profile.questions.map((x) => x.category) },
+    });
+  } catch (err) {
+    sendRepoError(res, err);
+  }
+});
+
+// ── helpers ──────────────────────────────────────────────────
+
+function isResumeProfileLike(v: unknown): v is { skills?: string[] } {
+  return !!v && typeof v === 'object' && Array.isArray((v as { skills?: unknown }).skills);
+}
+
+function isJdProfileLike(v: unknown): v is { requiredSkills?: string[] } {
+  return !!v && typeof v === 'object' && Array.isArray((v as { requiredSkills?: unknown }).requiredSkills);
+}
+
+function isProjectProfileLike(v: unknown): boolean {
+  return (
+    !!v &&
+    typeof v === 'object' &&
+    typeof (v as { fullName?: unknown }).fullName === 'string' &&
+    typeof (v as { technologyProfile?: unknown }).technologyProfile === 'object'
+  );
+}
+
+function sendRepoError(res: Response, err: unknown): void {
+  if (err instanceof RepoAnalysisError) {
+    res.status(err.status).json({ success: false, error: err.message, code: err.code });
+    return;
+  }
+  console.error('[GitHub] analysis failed:', (err as Error).message);
+  res.status(502).json({ success: false, error: 'GitHub analysis failed', code: 'FETCH' });
+}
 
 export default router;

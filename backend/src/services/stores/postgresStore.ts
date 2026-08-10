@@ -6,7 +6,7 @@ import { SessionStore } from '../sessionStore';
 // Maps the in-memory session record to the `sessions` table.
 // ──────────────────────────────────────────────────────────────
 
-const SCHEMA_SQL = `
+export const SCHEMA_SQL = `
   create table if not exists sessions (
     id             uuid primary key,
     mode           text not null default 'CODING',
@@ -16,6 +16,17 @@ const SCHEMA_SQL = `
     resume_text    text not null default '',
     jd_text        text not null default '',
     github_summary text not null default '',
+    difficulty     text not null default 'Medium',
+    skills         jsonb not null default '[]'::jsonb,
+    resume_profile text not null default '',
+    jd_profile     text not null default '',
+    resume_profile_data jsonb,
+    jd_profile_data     jsonb,
+    match_report        jsonb,
+    coding         jsonb,
+    resume_file_key text,
+    resume_file_url text,
+    resume_file_name text,
     status         text not null default 'SETUP',
     created_at     timestamptz not null default now(),
     started_at     timestamptz,
@@ -23,19 +34,47 @@ const SCHEMA_SQL = `
     duration_ms    bigint,
     feedback       jsonb,
     roadmap        jsonb,
-    transcript     jsonb not null default '[]'::jsonb
+    transcript     jsonb not null default '[]'::jsonb,
+    project_profile_data jsonb,
+    project_index        jsonb,
+    github_analysis      text not null default '',
+    github_analyzed_at   timestamptz
   );
   create index if not exists sessions_status_idx on sessions (status);
   create index if not exists sessions_created_at_idx on sessions (created_at desc);
+  -- Upgrade path for tables created before the Phase 2 columns existed
+  -- (create table if not exists never adds columns to an existing table).
+  alter table sessions add column if not exists difficulty     text not null default 'Medium';
+  alter table sessions add column if not exists skills         jsonb not null default '[]'::jsonb;
+  alter table sessions add column if not exists resume_profile text not null default '';
+  alter table sessions add column if not exists jd_profile     text not null default '';
+  alter table sessions add column if not exists resume_profile_data jsonb;
+  alter table sessions add column if not exists jd_profile_data     jsonb;
+  alter table sessions add column if not exists match_report        jsonb;
+  alter table sessions add column if not exists coding              jsonb;
+  alter table sessions add column if not exists resume_file_key  text;
+  alter table sessions add column if not exists resume_file_url  text;
+  alter table sessions add column if not exists resume_file_name text;
+  -- Phase 4: GitHub project-profile columns (additive).
+  alter table sessions add column if not exists project_profile_data jsonb;
+  alter table sessions add column if not exists project_index        jsonb;
+  alter table sessions add column if not exists github_analysis      text not null default '';
+  alter table sessions add column if not exists github_analyzed_at   timestamptz;
 `;
 
 const UPSERT_SQL = `
   insert into sessions (
     id, mode, role, company, candidate_id, resume_text, jd_text, github_summary,
-    status, created_at, started_at, score, duration_ms, feedback, roadmap, transcript
+    difficulty, skills, resume_profile, jd_profile, resume_profile_data, jd_profile_data, match_report, coding,
+    resume_file_key, resume_file_url, resume_file_name,
+    status, created_at, started_at, score, duration_ms, feedback, roadmap, transcript,
+    project_profile_data, project_index, github_analysis, github_analyzed_at
   ) values (
     $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12, $13, $14, $15, $16
+    $9, $10, $11, $12, $13, $14, $15, $16,
+    $17, $18, $19,
+    $20, $21, $22, $23, $24, $25, $26, $27,
+    $28, $29, $30, $31
   )
   on conflict (id) do update set
     mode = excluded.mode,
@@ -45,6 +84,17 @@ const UPSERT_SQL = `
     resume_text = excluded.resume_text,
     jd_text = excluded.jd_text,
     github_summary = excluded.github_summary,
+    difficulty = excluded.difficulty,
+    skills = excluded.skills,
+    resume_profile = excluded.resume_profile,
+    jd_profile = excluded.jd_profile,
+    resume_profile_data = excluded.resume_profile_data,
+    jd_profile_data = excluded.jd_profile_data,
+    match_report = excluded.match_report,
+    coding = excluded.coding,
+    resume_file_key = excluded.resume_file_key,
+    resume_file_url = excluded.resume_file_url,
+    resume_file_name = excluded.resume_file_name,
     status = excluded.status,
     created_at = excluded.created_at,
     started_at = excluded.started_at,
@@ -52,10 +102,14 @@ const UPSERT_SQL = `
     duration_ms = excluded.duration_ms,
     feedback = excluded.feedback,
     roadmap = excluded.roadmap,
-    transcript = excluded.transcript
+    transcript = excluded.transcript,
+    project_profile_data = excluded.project_profile_data,
+    project_index = excluded.project_index,
+    github_analysis = excluded.github_analysis,
+    github_analyzed_at = excluded.github_analyzed_at
 `;
 
-function toRow(rec: Record<string, any>) {
+export function toRow(rec: Record<string, any>) {
   return [
     rec.id,
     rec.mode ?? 'CODING',
@@ -65,6 +119,17 @@ function toRow(rec: Record<string, any>) {
     rec.resumeText ?? '',
     rec.jdText ?? '',
     rec.githubSummary ?? '',
+    rec.difficulty ?? 'Medium',
+    rec.skills ?? [],
+    rec.resumeProfile ?? '',
+    rec.jdProfile ?? '',
+    rec.resumeProfileData ?? null,
+    rec.jdProfileData ?? null,
+    rec.matchReport ?? null,
+    rec.coding ?? null,
+    rec.resumeFileKey ?? null,
+    rec.resumeFileUrl ?? null,
+    rec.resumeFileName ?? null,
     rec.status ?? 'SETUP',
     rec.createdAt ?? new Date().toISOString(),
     rec.startedAt ?? null,
@@ -73,10 +138,14 @@ function toRow(rec: Record<string, any>) {
     rec.feedback ?? null,
     rec.roadmap ?? null,
     rec.transcript ?? [],
+    rec.projectProfileData ?? null,
+    rec.projectIndex ?? null,
+    rec.githubAnalysis ?? '',
+    rec.githubAnalyzedAt ?? null,
   ];
 }
 
-function fromRow(row: any): Record<string, any> {
+export function fromRow(row: any): Record<string, any> {
   return {
     id: row.id,
     mode: row.mode,
@@ -86,6 +155,17 @@ function fromRow(row: any): Record<string, any> {
     resumeText: row.resume_text,
     jdText: row.jd_text,
     githubSummary: row.github_summary,
+    difficulty: row.difficulty ?? 'Medium',
+    skills: row.skills ?? [],
+    resumeProfile: row.resume_profile ?? '',
+    jdProfile: row.jd_profile ?? '',
+    resumeProfileData: row.resume_profile_data ?? null,
+    jdProfileData: row.jd_profile_data ?? null,
+    matchReport: row.match_report ?? null,
+    coding: row.coding ?? null,
+    resumeFileKey: row.resume_file_key ?? null,
+    resumeFileUrl: row.resume_file_url ?? null,
+    resumeFileName: row.resume_file_name ?? null,
     status: row.status,
     createdAt: new Date(row.created_at).toISOString(),
     startedAt: row.started_at ? new Date(row.started_at).toISOString() : null,
@@ -94,6 +174,10 @@ function fromRow(row: any): Record<string, any> {
     feedback: row.feedback,
     roadmap: row.roadmap,
     transcript: row.transcript ?? [],
+    projectProfileData: row.project_profile_data ?? null,
+    projectIndex: row.project_index ?? null,
+    githubAnalysis: row.github_analysis ?? '',
+    githubAnalyzedAt: row.github_analyzed_at ? new Date(row.github_analyzed_at).toISOString() : null,
   };
 }
 

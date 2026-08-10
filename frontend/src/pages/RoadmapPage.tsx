@@ -1,19 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
-  CheckCircle2, Circle, Clock,
+  CheckCircle2, Circle, Clock, CheckSquare,
   Target, TrendingUp, Sparkles, Loader2, RefreshCw, ArrowUpRight,
 } from 'lucide-react';
-import type { Roadmap as RoadmapType, InterviewSession } from '../types';
+import type { Roadmap as RoadmapType, InterviewSession, RoadmapStep } from '../types';
 import { apiFetch } from '../lib/api';
-
-interface RoadmapStep {
-  title: string;
-  desc: string;
-  timeEstimate: string;
-  priority: 'HIGH' | 'MEDIUM' | 'LOW';
-  status: 'in-progress' | 'pending';
-}
 
 interface Category {
   label: string;
@@ -49,6 +41,8 @@ export default function RoadmapPage() {
   const [role, setRole] = useState('');
   const [company, setCompany] = useState('');
   const [mode, setMode] = useState('TECHNICAL');
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [updatingStep, setUpdatingStep] = useState<string | null>(null);
 
   const loadRoadmap = useCallback(async (sessionId?: string) => {
     try {
@@ -67,6 +61,7 @@ export default function RoadmapPage() {
       const json = await res.json();
       if (json.success && json.data?.roadmap) {
         setRoadmap(json.data.roadmap);
+        setCurrentSessionId(sessionId || null);
         setError(null);
       } else {
         setError(json.error || 'Failed to generate roadmap');
@@ -76,6 +71,30 @@ export default function RoadmapPage() {
       setError('Roadmap service unreachable');
     }
   }, [useCustom, role, company, mode]);
+
+  const toggleStep = async (step: RoadmapStep) => {
+    if (!currentSessionId || !step.id || updatingStep) return;
+    const next = step.status === 'completed' ? 'in-progress' : 'completed';
+    setUpdatingStep(step.id);
+    try {
+      const res = await apiFetch(`/api/roadmap/${currentSessionId}/steps/${encodeURIComponent(step.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: next }),
+      });
+      const json = await res.json();
+      if (json.success && json.data?.roadmap) {
+        setRoadmap(json.data.roadmap);
+      } else {
+        setError(json.error || 'Failed to update step');
+      }
+    } catch (err) {
+      console.error('[Roadmap] step update failed:', err);
+      setError('Could not update step');
+    } finally {
+      setUpdatingStep(null);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -148,11 +167,12 @@ export default function RoadmapPage() {
   const mins = totalMinutes % 60;
 
   const steps: RoadmapStep[] = (roadmap?.steps || []).map((s) => ({
+    id: s.id,
     title: s.title,
     desc: s.desc,
     timeEstimate: s.timeEstimate,
     priority: s.priority,
-    status: s.status === 'in-progress' ? 'in-progress' : 'pending',
+    status: s.status === 'completed' ? 'completed' : s.status === 'in-progress' ? 'in-progress' : 'pending',
   }));
 
   return (
@@ -239,6 +259,11 @@ export default function RoadmapPage() {
                 <option value="BEHAVIORAL">Behavioral</option>
                 <option value="SYSTEM_DESIGN">System Design</option>
                 <option value="PROJECT">Project</option>
+                <option value="HR">HR</option>
+                <option value="MIXED">Mixed</option>
+                <option value="RESUME_BASED">Resume-based</option>
+                <option value="JD_BASED">JD-based</option>
+                <option value="SKILLS_BASED">Skills-based</option>
               </select>
             </div>
             <motion.button
@@ -296,8 +321,10 @@ export default function RoadmapPage() {
               {steps.map((step, i) => {
                 const st = statusStyle[step.status];
                 const isLast = i === steps.length - 1;
+                const completed = step.status === 'completed';
+                const isUpdating = updatingStep === step.id;
                 return (
-                  <div key={step.title} style={{ display: 'flex', gap: 16 }}>
+                  <div key={step.id || step.title} style={{ display: 'flex', gap: 16 }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
                       <motion.div
                         initial={{ scale: 0.7, opacity: 0 }}
@@ -306,24 +333,32 @@ export default function RoadmapPage() {
                         style={{
                           width: 34, height: 34, borderRadius: '50%',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          background: step.status === 'in-progress'
-                            ? 'hsl(174 85% 60% / 0.18)'
-                            : 'hsl(215 15% 12%)',
-                          border: `1px solid ${step.status === 'in-progress'
-                            ? 'hsl(174 85% 60% / 0.5)'
-                            : 'hsl(215 15% 22%)'}`,
+                          background: completed
+                            ? 'hsl(142 70% 50% / 0.18)'
+                            : step.status === 'in-progress'
+                              ? 'hsl(174 85% 60% / 0.18)'
+                              : 'hsl(215 15% 12%)',
+                          border: `1px solid ${completed
+                            ? 'hsl(142 70% 50% / 0.55)'
+                            : step.status === 'in-progress'
+                              ? 'hsl(174 85% 60% / 0.5)'
+                              : 'hsl(215 15% 22%)'}`,
                         }}
                       >
-                        {step.status === 'in-progress'
-                          ? <Circle size={16} color="hsl(174 85% 65%)" className="animate-pulse-glow" />
-                          : <span style={{ fontSize: 12, fontWeight: 700, color: 'hsl(210 10% 45%)' }}>{i + 1}</span>}
+                        {completed
+                          ? <CheckCircle2 size={17} color="hsl(142 70% 55%)" />
+                          : step.status === 'in-progress'
+                            ? <Circle size={16} color="hsl(174 85% 65%)" className="animate-pulse-glow" />
+                            : <span style={{ fontSize: 12, fontWeight: 700, color: 'hsl(210 10% 45%)' }}>{i + 1}</span>}
                       </motion.div>
                       {!isLast && (
                         <div style={{
                           width: 2, flex: 1, minHeight: 24, marginTop: 4,
-                          background: step.status === 'in-progress'
-                            ? 'hsl(174 85% 60% / 0.4)'
-                            : 'hsl(215 15% 18%)',
+                          background: completed
+                            ? 'hsl(142 70% 50% / 0.4)'
+                            : step.status === 'in-progress'
+                              ? 'hsl(174 85% 60% / 0.4)'
+                              : 'hsl(215 15% 18%)',
                         }} />
                       )}
                     </div>
@@ -333,19 +368,29 @@ export default function RoadmapPage() {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: 0.12 + i * 0.06 }}
                       whileHover={{ x: 4 }}
+                      onClick={() => toggleStep(step)}
                       style={{
-                        flex: 1, marginBottom: 18,
+                        flex: 1, marginBottom: 18, cursor: 'pointer',
                         padding: '16px 18px', borderRadius: 14,
-                        background: step.status === 'in-progress'
-                          ? 'hsl(176 40% 45% / 0.08)'
-                          : 'hsl(215 15% 9%)',
-                        border: `1px solid ${step.status === 'in-progress'
-                          ? 'hsl(174 85% 60% / 0.3)'
-                          : 'hsl(215 15% 15%)'}`,
+                        background: completed
+                          ? 'hsl(142 70% 50% / 0.06)'
+                          : step.status === 'in-progress'
+                            ? 'hsl(176 40% 45% / 0.08)'
+                            : 'hsl(215 15% 9%)',
+                        border: `1px solid ${completed
+                          ? 'hsl(142 70% 50% / 0.3)'
+                          : step.status === 'in-progress'
+                            ? 'hsl(174 85% 60% / 0.3)'
+                            : 'hsl(215 15% 15%)'}`,
+                        opacity: completed ? 0.85 : 1,
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 6 }}>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: 'hsl(210 10% 86%)' }}>
+                        <span style={{
+                          fontSize: 14, fontWeight: 600, color: 'hsl(210 10% 86%)',
+                          textDecoration: completed ? 'line-through' : 'none',
+                          textDecorationColor: 'hsl(142 70% 55% / 0.6)',
+                        }}>
                           {step.title}
                         </span>
                         <span style={{
@@ -373,6 +418,15 @@ export default function RoadmapPage() {
                           border: `1px solid ${priorityColor[step.priority]}30`,
                         }}>
                           {step.priority} priority
+                        </span>
+                        <span style={{
+                          marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4,
+                          fontSize: 11, color: completed ? 'hsl(142 70% 55%)' : 'hsl(210 10% 45%)',
+                        }}>
+                          {isUpdating
+                            ? <Loader2 size={12} className="animate-spin" />
+                            : <CheckSquare size={12} />}
+                          {completed ? 'Mark incomplete' : 'Mark complete'}
                         </span>
                       </div>
                     </motion.div>

@@ -1,16 +1,19 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Mic, Code2, Brain, History,
-  Settings, LogOut,
+  Settings, LogOut, Target, Users, GitBranch,
 } from 'lucide-react';
 
 const navItems = [
-  { icon: LayoutDashboard, label: 'Dashboard',  path: '/dashboard',             end: true },
-  { icon: Mic,             label: 'Interviews', path: '/dashboard/interviews',  end: false },
-  { icon: Code2,           label: 'Coding',     path: '/dashboard/coding',      end: false },
-  { icon: Brain,           label: 'AI Roadmap', path: '/dashboard/roadmap',     end: false },
-  { icon: History,         label: 'History',    path: '/dashboard/history',     end: false },
-  { icon: Settings,        label: 'Settings',   path: '/dashboard/settings',    end: false },
+  { icon: LayoutDashboard, label: 'Dashboard',    path: '/dashboard',             end: true },
+  { icon: Mic,             label: 'Interviews',   path: '/dashboard/interviews',  end: false },
+  { icon: Target,          label: 'Resume vs JD', path: '/dashboard/match',       end: false },
+  { icon: GitBranch,       label: 'GitHub',       path: '/dashboard/github',      end: false },
+  { icon: Code2,           label: 'Coding',       path: '/dashboard/coding',      end: false },
+  { icon: Users,           label: 'Candidates',   path: '/dashboard/candidates',  end: false },
+  { icon: Brain,           label: 'AI Roadmap',   path: '/dashboard/roadmap',     end: false },
+  { icon: History,         label: 'History',      path: '/dashboard/history',     end: false },
+  { icon: Settings,        label: 'Settings',     path: '/dashboard/settings',    end: false },
 ];
 
 export default function DashboardLayout() {

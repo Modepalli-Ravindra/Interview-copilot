@@ -31,6 +31,10 @@ router.post('/', async (req: Request, res: Response) => {
       mode: session?.mode || mode || 'TECHNICAL',
       focusAreas,
       strengths,
+      score: typeof session?.score === 'number' ? session.score : undefined,
+      nextTopics: Array.isArray(session?.feedback?.nextTopics)
+        ? session.feedback.nextTopics.filter((t: unknown) => typeof t === 'string').slice(0, 6)
+        : undefined,
     });
 
     if (session && session.id) {
@@ -42,6 +46,33 @@ router.post('/', async (req: Request, res: Response) => {
     console.error('[Roadmap] generation failed:', (err as Error).message);
     res.status(502).json({ success: false, error: 'Failed to generate roadmap' });
   }
+});
+
+// PATCH /api/roadmap/:sessionId/steps/:stepId — toggle a step's completion
+// status so the learning timeline stays interactive and durable.
+router.patch('/:sessionId/steps/:stepId', (req: Request, res: Response) => {
+  const session = getSessionRecord(req.params.sessionId);
+  if (!session) {
+    return res.status(404).json({ success: false, error: 'Session not found' });
+  }
+  if (!Array.isArray(session.roadmap?.steps)) {
+    return res.status(404).json({ success: false, error: 'No roadmap on this session' });
+  }
+
+  const { status } = req.body || {};
+  const validStatuses = ['in-progress', 'pending', 'completed'];
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ success: false, error: `status must be one of ${validStatuses.join(', ')}` });
+  }
+
+  const step = session.roadmap.steps.find((s: { id?: string }) => s.id === req.params.stepId);
+  if (!step) {
+    return res.status(404).json({ success: false, error: 'Roadmap step not found' });
+  }
+
+  step.status = status;
+  updateSessionRecord(req.params.sessionId, { roadmap: session.roadmap });
+  res.json({ success: true, data: { roadmap: session.roadmap } });
 });
 
 export default router;

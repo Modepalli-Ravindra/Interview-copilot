@@ -10,7 +10,7 @@ import { useInterviewStore } from '../stores/interviewStore';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
 import { socketService } from '../services/socketService';
 import { apiFetch } from '../lib/api';
-import type { Problem, FeedbackReport } from '../types';
+import type { Problem, FeedbackReport, GeneratedQuestion } from '../types';
 
 type TabMode = 'transcript' | 'code' | 'problem';
 
@@ -43,6 +43,7 @@ export default function InterviewPage() {
   const [gateway, setGateway] = useState<{ provider: string; enabled: boolean; fromMock: boolean } | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [problem, setProblem] = useState<Problem | null>(null);
+  const [generated, setGenerated] = useState<GeneratedQuestion | null>(null);
   const [feedback, setFeedback] = useState<FeedbackReport | null>(null);
   const [showReport, setShowReport] = useState(false);
   const [sessionInfo, setSessionInfo] = useState<{ role: string; company: string; mode: string }>({ role: 'Software Engineer', company: 'Unknown', mode: 'TECHNICAL' });
@@ -115,11 +116,13 @@ export default function InterviewPage() {
           apiFetch('/api/problems'),
         ]);
         const sJson = await sRes.json();
+        let mode = 'TECHNICAL';
         if (sJson.success && sJson.data) {
+          mode = sJson.data.mode || 'TECHNICAL';
           setSessionInfo({
             role: sJson.data.role || 'Software Engineer',
             company: sJson.data.company || 'Unknown',
-            mode: sJson.data.mode || 'TECHNICAL',
+            mode,
           });
           if (sJson.data.feedback) setFeedback(sJson.data.feedback);
           if (sJson.data.status === 'COMPLETED') {
@@ -131,6 +134,43 @@ export default function InterviewPage() {
         if (pJson.success && Array.isArray(pJson.data)) {
           const twoSum = pJson.data.find((p: any) => p.id === 'two-sum') || pJson.data[0];
           if (twoSum) setProblem(twoSum);
+        }
+
+        // CODING sessions use a fresh AI-generated problem grounded in the
+        // session context (with hidden tests verified server-side), falling
+        // back to the static set when generation is unavailable.
+        if (mode === 'CODING') {
+          try {
+            const genRes = await apiFetch('/api/coding/generate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sessionId, language: 'python', difficulty: 'Medium' }),
+            });
+            const genJson = await genRes.json();
+            if (genJson.success && genJson.data?.question) {
+              const q = genJson.data.question as GeneratedQuestion;
+              setGenerated(q);
+              setProblem({
+                id: q.id,
+                title: q.title,
+                difficulty: q.difficulty,
+                tags: [q.topic],
+                acceptance: 100,
+                minutes: 30,
+                statement: [
+                  q.problemStatement,
+                  ...(q.constraints.length ? ['', '## Constraints', ...q.constraints.map(c => `- ${c}`)] : []),
+                  ...(q.inputFormat ? ['', '## Input Format', q.inputFormat] : []),
+                  ...(q.outputFormat ? ['', '## Output Format', q.outputFormat] : []),
+                  ...(q.examples.length ? ['', '## Examples', ...q.examples.flatMap(ex => [`**Input:**`, `\`${ex.input}\``, `**Output:**`, `\`${ex.output}\``, ...(ex.explanation ? [`- Explanation: ${ex.explanation}`] : []), ''])] : []),
+                  ...(q.expectedComplexity ? ['', `**Expected complexity:** ${q.expectedComplexity}`] : []),
+                ].join('\n'),
+                testCases: q.testCases,
+              });
+            }
+          } catch (err) {
+            console.warn('[Interview] dynamic problem generation failed, using static set:', (err as Error).message);
+          }
         }
       } catch (err) {
         console.error('[Interview] context load failed:', err);
@@ -401,10 +441,10 @@ export default function InterviewPage() {
                     {problem && problem.testCases.length > 0 && (
                       <div style={{ marginTop: 18, padding: '12px 16px', borderRadius: 10, background: 'hsl(215 15% 9%)', border: '1px solid hsl(215 15% 15%)' }}>
                         <p style={{ fontSize: 12, fontWeight: 700, color: 'hsl(210 10% 50%)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 8 }}>
-                          Hidden test cases ({problem.testCases.length})
+                          Hidden test cases ({(generated ? generated.hiddenTestCases.length : problem.testCases.length)})
                         </p>
                         <p style={{ fontSize: 12.5, color: 'hsl(210 10% 62%)', lineHeight: 1.7 }}>
-                          Your solution will be checked against {problem.testCases.length} test cases when you press Run Tests. Input is read from stdin; output is compared to the expected value.
+                          Your solution will be checked against {(generated ? generated.hiddenTestCases.length : problem.testCases.length)} test cases when you press Run Tests. Input is read from stdin; output is compared to the expected value.
                         </p>
                       </div>
                     )}
@@ -414,7 +454,19 @@ export default function InterviewPage() {
 
               {activeTab === 'code' && (
                 <div style={{ flex: 1, padding: '12px', overflow: 'hidden' }}>
-                  <CodeWorkspace testCases={problem?.testCases || []} />
+                  <CodeWorkspace
+                    testCases={problem?.testCases || []}
+                    hiddenTestCases={generated ? generated.hiddenTestCases : undefined}
+                    expectedComplexity={generated ? generated.expectedComplexity : undefined}
+                    sessionId={sessionId}
+                    problem={problem ? {
+                      id: problem.id,
+                      title: problem.title,
+                      difficulty: problem.difficulty,
+                      tags: problem.tags,
+                      statement: problem.statement,
+                    } : null}
+                  />
                 </div>
               )}
             </motion.div>
@@ -723,35 +775,133 @@ export default function InterviewPage() {
               </div>
 
               {/* Breakdown */}
-              {feedback.breakdown.length > 0 && (
+              {(() => {
+                const dims = (feedback.dimensions && feedback.dimensions.length ? feedback.dimensions : feedback.breakdown) || [];
+                if (dims.length === 0) return null;
+                return (
+                  <div style={{ marginBottom: 24 }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: 'hsl(210 10% 45%)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 12 }}>
+                      Score Breakdown
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+                      {dims.map(({ label, value }) => (
+                        <div key={label} style={{
+                          padding: '12px 14px', borderRadius: 12,
+                          background: 'hsl(215 15% 9%)', border: '1px solid hsl(215 15% 16%)',
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                            <span style={{ fontSize: 12, color: 'hsl(210 10% 65%)' }}>{label}</span>
+                            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'hsl(210 10% 80%)' }}>{value}%</span>
+                          </div>
+                          <div style={{ height: 7, borderRadius: 999, background: 'hsl(215 15% 14%)', overflow: 'hidden' }}>
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${value}%` }}
+                              transition={{ duration: 0.8, delay: 0.1 }}
+                              style={{
+                                height: '100%', borderRadius: 999,
+                                background: value >= 85
+                                  ? 'linear-gradient(90deg, hsl(142 70% 45%), hsl(142 70% 60%))'
+                                  : value >= 70
+                                    ? 'linear-gradient(90deg, hsl(35 90% 45%), hsl(35 90% 60%))'
+                                    : 'linear-gradient(90deg, hsl(0 85% 55%), hsl(0 85% 70%))',
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Coding performance */}
+              {feedback.codingPerformance && (
                 <div style={{ marginBottom: 24 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: 'hsl(210 10% 45%)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 12 }}>
-                    Score Breakdown
+                  <p style={{ fontSize: 11, fontWeight: 700, color: 'hsl(215 80% 65%)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 12 }}>
+                    <Code2 size={12} style={{ marginRight: 4, verticalAlign: -2 }} /> Coding Performance
                   </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {feedback.breakdown.map(({ label, value }) => (
-                      <div key={label}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                          <span style={{ fontSize: 12.5, color: 'hsl(210 10% 65%)' }}>{label}</span>
-                          <span style={{ fontSize: 12.5, fontWeight: 700, color: 'hsl(210 10% 80%)' }}>{value}%</span>
-                        </div>
-                        <div style={{ height: 7, borderRadius: 999, background: 'hsl(215 15% 14%)', overflow: 'hidden' }}>
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${value}%` }}
-                            transition={{ duration: 0.8, delay: 0.1 }}
-                            style={{
-                              height: '100%', borderRadius: 999,
-                              background: value >= 85
-                                ? 'linear-gradient(90deg, hsl(142 70% 45%), hsl(142 70% 60%))'
-                                : value >= 70
-                                  ? 'linear-gradient(90deg, hsl(35 90% 45%), hsl(35 90% 60%))'
-                                  : 'linear-gradient(90deg, hsl(0 85% 55%), hsl(0 85% 70%))',
-                            }}
-                          />
-                        </div>
+                  <div style={{
+                    padding: '14px 16px', borderRadius: 12,
+                    background: 'hsl(215 15% 9%)', border: '1px solid hsl(215 15% 16%)',
+                  }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'hsl(210 10% 82%)' }}>
+                        {feedback.codingPerformance.problemTitle || 'Coding exercise'}
+                      </span>
+                      {feedback.codingPerformance.language && (
+                        <span style={{
+                          fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                          color: 'hsl(215 80% 70%)', background: 'hsl(215 80% 60% / 0.12)',
+                          border: '1px solid hsl(215 80% 60% / 0.25)',
+                        }}>{feedback.codingPerformance.language}</span>
+                      )}
+                      {feedback.codingPerformance.status && (
+                        <span style={{
+                          fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                          color: feedback.codingPerformance.status === 'ACCEPTED' ? 'hsl(142 70% 60%)' : 'hsl(0 85% 60%)',
+                          background: feedback.codingPerformance.status === 'ACCEPTED'
+                            ? 'hsl(142 70% 50% / 0.12)'
+                            : 'hsl(0 85% 55% / 0.12)',
+                          border: '1px solid ' + (feedback.codingPerformance.status === 'ACCEPTED'
+                            ? 'hsl(142 70% 50% / 0.3)'
+                            : 'hsl(0 85% 55% / 0.3)'),
+                        }}>
+                          {feedback.codingPerformance.status === 'ACCEPTED'
+                            ? `${feedback.codingPerformance.passedCount ?? '—'}/${feedback.codingPerformance.totalCount ?? '—'} passed`
+                            : feedback.codingPerformance.status}
+                        </span>
+                      )}
+                      {feedback.codingPerformance.timeMs != null && (
+                        <span style={{ fontSize: 11, color: 'hsl(210 10% 55%)' }}>
+                          {feedback.codingPerformance.timeMs.toFixed(1)}ms
+                        </span>
+                      )}
+                      {feedback.codingPerformance.verified === false && (
+                        <span style={{ fontSize: 11, color: 'hsl(48 95% 60%)', fontStyle: 'italic' }}>
+                          Judge offline — result not verified
+                        </span>
+                      )}
+                    </div>
+
+                    {feedback.codingPerformance.strengths.length > 0 && (
+                      <div style={{ marginBottom: 10 }}>
+                        <p style={{ fontSize: 10.5, fontWeight: 700, color: 'hsl(142 70% 60%)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 5 }}>
+                          What went well
+                        </p>
+                        {feedback.codingPerformance.strengths.map((s, i) => (
+                          <p key={i} style={{ fontSize: 12.5, color: 'hsl(210 10% 68%)', lineHeight: 1.6 }}>• {s}</p>
+                        ))}
                       </div>
-                    ))}
+                    )}
+
+                    {feedback.codingPerformance.weaknesses.length > 0 && (
+                      <div style={{ marginBottom: 10 }}>
+                        <p style={{ fontSize: 10.5, fontWeight: 700, color: 'hsl(0 85% 60%)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 5 }}>
+                          Where to improve
+                        </p>
+                        {feedback.codingPerformance.weaknesses.map((s, i) => (
+                          <p key={i} style={{ fontSize: 12.5, color: 'hsl(210 10% 68%)', lineHeight: 1.6 }}>• {s}</p>
+                        ))}
+                      </div>
+                    )}
+
+                    {feedback.codingPerformance.complexity && (
+                      <p style={{ fontSize: 12, color: 'hsl(210 10% 60%)', marginBottom: 10 }}>
+                        <span style={{ color: 'hsl(210 10% 50%)' }}>Complexity: </span>{feedback.codingPerformance.complexity}
+                      </p>
+                    )}
+
+                    {feedback.codingPerformance.recommendation.length > 0 && (
+                      <div>
+                        <p style={{ fontSize: 10.5, fontWeight: 700, color: 'hsl(215 80% 65%)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 5 }}>
+                          Recommendation
+                        </p>
+                        {feedback.codingPerformance.recommendation.map((s, i) => (
+                          <p key={i} style={{ fontSize: 12.5, color: 'hsl(210 10% 68%)', lineHeight: 1.6 }}>• {s}</p>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -772,6 +922,27 @@ export default function InterviewPage() {
                       }}>
                         {s}
                       </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Strong answers */}
+              {feedback.strongAnswers && feedback.strongAnswers.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: 'hsl(142 70% 60%)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 10 }}>
+                    <CheckCircle2 size={12} style={{ marginRight: 4, verticalAlign: -2 }} /> Strong Answers
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {feedback.strongAnswers.map((a, i) => (
+                      <div key={i} style={{
+                        padding: '11px 13px', borderRadius: 10,
+                        background: 'hsl(215 15% 9%)',
+                        border: '1px solid hsl(142 70% 50% / 0.22)',
+                        borderLeft: '3px solid hsl(142 70% 55%)',
+                      }}>
+                        <p style={{ fontSize: 12.5, color: 'hsl(210 10% 68%)', lineHeight: 1.55 }}>{a}</p>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -808,6 +979,47 @@ export default function InterviewPage() {
                 </div>
               )}
 
+              {/* Weak answers */}
+              <div style={{ marginBottom: 24 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: 'hsl(0 85% 60%)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 10 }}>
+                  <XCircle size={12} style={{ marginRight: 4, verticalAlign: -2 }} /> Weak Answers
+                </p>
+                {feedback.weakAnswers && feedback.weakAnswers.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {feedback.weakAnswers.map((a, i) => (
+                      <div key={i} style={{
+                        padding: '11px 13px', borderRadius: 10,
+                        background: 'hsl(215 15% 9%)',
+                        border: '1px solid hsl(0 85% 55% / 0.22)',
+                        borderLeft: '3px solid hsl(0 85% 60%)',
+                      }}>
+                        <p style={{ fontSize: 12.5, color: 'hsl(210 10% 68%)', lineHeight: 1.55, whiteSpace: 'pre-line' }}>{a}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 12, color: 'hsl(210 10% 55%)', fontStyle: 'italic' }}>No notably weak answers were detected.</p>
+                )}
+              </div>
+
+              {/* Better answer */}
+              <div style={{ marginBottom: 24 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: 'hsl(174 85% 65%)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 10 }}>
+                  <Sparkles size={12} style={{ marginRight: 4, verticalAlign: -2 }} /> Better Answer
+                </p>
+                {feedback.betterAnswer ? (
+                  <div style={{
+                    padding: '13px 15px', borderRadius: 12,
+                    background: 'linear-gradient(135deg, hsl(174 85% 60% / 0.08), hsl(176 40% 45% / 0.06))',
+                    border: '1px solid hsl(174 85% 60% / 0.3)',
+                  }}>
+                    <p style={{ fontSize: 12.5, color: 'hsl(174 85% 80%)', lineHeight: 1.6, whiteSpace: 'pre-line' }}>{feedback.betterAnswer}</p>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 12, color: 'hsl(210 10% 55%)', fontStyle: 'italic' }}>No rewritten answer available for this session.</p>
+                )}
+              </div>
+
               {/* Tips */}
               {feedback.tips.length > 0 && (
                 <div style={{ marginBottom: 24 }}>
@@ -827,6 +1039,48 @@ export default function InterviewPage() {
                 </div>
               )}
 
+              {/* Recommended coding practice */}
+              <div style={{ marginBottom: 24 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: 'hsl(320 75% 60%)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 10 }}>
+                  <Code2 size={12} style={{ marginRight: 4, verticalAlign: -2 }} /> Coding Practice
+                </p>
+                {feedback.recommendedCodingPractice && feedback.recommendedCodingPractice.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {feedback.recommendedCodingPractice.map((r, i) => (
+                      <p key={i} style={{
+                        fontSize: 12.5, color: 'hsl(210 10% 68%)', lineHeight: 1.6,
+                        paddingLeft: 12, borderLeft: '2px solid hsl(320 75% 55% / 0.45)',
+                      }}>
+                        {r}
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 12, color: 'hsl(210 10% 55%)', fontStyle: 'italic' }}>No coding-specific weaknesses were detected in this session.</p>
+                )}
+              </div>
+
+              {/* Recommended interview questions */}
+              <div style={{ marginBottom: 24 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: 'hsl(215 80% 60%)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 10 }}>
+                  <MessageSquare size={12} style={{ marginRight: 4, verticalAlign: -2 }} /> Interview Questions to Practice
+                </p>
+                {feedback.recommendedInterviewQuestions && feedback.recommendedInterviewQuestions.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {feedback.recommendedInterviewQuestions.map((r, i) => (
+                      <p key={i} style={{
+                        fontSize: 12.5, color: 'hsl(210 10% 68%)', lineHeight: 1.6,
+                        paddingLeft: 12, borderLeft: '2px solid hsl(215 80% 55% / 0.45)',
+                      }}>
+                        {r}
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 12, color: 'hsl(210 10% 55%)', fontStyle: 'italic' }}>No recommended interview questions for this session.</p>
+                )}
+              </div>
+
               {/* Next topics */}
               {feedback.nextTopics.length > 0 && (
                 <div style={{ marginBottom: 8 }}>
@@ -844,6 +1098,24 @@ export default function InterviewPage() {
                         {t}
                       </span>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Context used */}
+              {feedback.contextUsed && (
+                <div style={{ marginBottom: 24 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: 'hsl(210 10% 45%)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 10 }}>
+                    Context Used
+                  </p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <ContextChip ok={feedback.contextUsed.resume} label={feedback.contextUsed.resume ? 'Resume' : 'No resume provided'} />
+                    <ContextChip ok={feedback.contextUsed.jd} label={feedback.contextUsed.jd ? 'Job description' : 'No job description'} />
+                    <ContextChip ok={feedback.contextUsed.skills.length > 0} label={feedback.contextUsed.skills.length > 0 ? `${feedback.contextUsed.skills.length} skills` : 'No skills listed'} />
+                    <ContextChip ok={feedback.contextUsed.github} label={feedback.contextUsed.github ? 'GitHub' : 'No GitHub repository'} />
+                    {feedback.contextUsed.difficulty && (
+                      <ContextChip ok label={`Difficulty: ${feedback.contextUsed.difficulty}`} />
+                    )}
                   </div>
                 </div>
               )}
@@ -867,5 +1139,22 @@ export default function InterviewPage() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function ContextChip({ ok, label }: { ok: boolean; label: string }) {
+  const color = ok ? 'hsl(142 70% 55%)' : 'hsl(0 85% 55%)';
+  const bg = ok ? 'hsl(142 70% 50% / 0.1)' : 'hsl(0 85% 55% / 0.1)';
+  const border = ok ? 'hsl(142 70% 50% / 0.25)' : 'hsl(0 85% 55% / 0.25)';
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      fontSize: 11.5, fontWeight: 600,
+      padding: '5px 11px', borderRadius: 999,
+      color, background: bg, border: `1px solid ${border}`,
+    }}>
+      <span style={{ fontSize: 10 }}>{ok ? '✓' : '—'}</span>
+      {label}
+    </span>
   );
 }

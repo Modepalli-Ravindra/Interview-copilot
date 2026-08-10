@@ -4,14 +4,16 @@
  * plan from the role and any available analysis.
  */
 
+import { createHash } from 'crypto';
 import { createGatewaySession, sendGatewayMessage } from './aiGateway';
 
 export interface RoadmapStep {
+  id: string;
   title: string;
   desc: string;
   timeEstimate: string;
   priority: 'HIGH' | 'MEDIUM' | 'LOW';
-  status: 'in-progress' | 'pending';
+  status: 'in-progress' | 'pending' | 'completed';
 }
 
 export interface Roadmap {
@@ -27,6 +29,14 @@ interface RoadmapInput {
   mode: string;
   focusAreas?: string[];
   strengths?: string[];
+  /** Latest interview score (0-100) when available — shapes pacing. */
+  score?: number | null;
+  /** Topics the feedback recommended next — prioritized into the plan. */
+  nextTopics?: string[];
+}
+
+function stepId(title: string): string {
+  return createHash('sha1').update(title).digest('hex').slice(0, 10);
 }
 
 const DEFAULT_AREAS = [
@@ -39,6 +49,7 @@ const DEFAULT_AREAS = [
 function deriveRoadmap(input: RoadmapInput): Roadmap {
   const areas = (input.focusAreas && input.focusAreas.length ? input.focusAreas : DEFAULT_AREAS).slice(0, 4);
   const steps: RoadmapStep[] = areas.map((topic, i) => ({
+    id: stepId(topic),
     title: topic,
     desc: `Build depth in ${topic.toLowerCase()} with targeted ${input.mode} practice for the ${input.role} role.`,
     timeEstimate: `${3 + i * 2} days`,
@@ -64,16 +75,19 @@ function parseRoadmap(raw: string): Roadmap | null {
     const steps: RoadmapStep[] = obj.steps
       .filter((s: any) => s && typeof s.title === 'string')
       .map((s: any) => ({
+        id: str(s.id) || stepId(str(s.title)),
         title: s.title,
         desc: str(s.desc),
         timeEstimate: str(s.timeEstimate) || '2-3 days',
         priority: (['HIGH', 'MEDIUM', 'LOW'].includes(s.priority) ? s.priority : 'MEDIUM') as RoadmapStep['priority'],
-        status: s.status === 'in-progress' ? 'in-progress' : 'pending',
+        status: s.status === 'completed' ? 'completed' : s.status === 'in-progress' ? 'in-progress' : 'pending',
       }));
     return {
       title: obj.title,
       summary: str(obj.summary),
-      steps: steps.length ? steps : [{ title: 'Core fundamentals', desc: 'Solidify fundamentals first.', timeEstimate: '3 days', priority: 'HIGH', status: 'in-progress' }],
+      steps: steps.length
+        ? steps
+        : [{ id: stepId('Core fundamentals'), title: 'Core fundamentals', desc: 'Solidify fundamentals first.', timeEstimate: '3 days', priority: 'HIGH', status: 'in-progress' }],
       generatedAt: new Date().toISOString(),
     };
   } catch {
@@ -89,10 +103,15 @@ export async function generateRoadmap(input: RoadmapInput): Promise<{ roadmap: R
     return { roadmap: fallback, fromMock: true };
   }
 
+  const pacing = typeof input.score === 'number' ? `\n- The candidate's latest score is ${input.score}/100; suggest realistic pacing (shorter steps if score < 50, deeper dives if score >= 75).` : '';
+  const next = input.nextTopics?.length ? `\nRecommended next topics from feedback: ${input.nextTopics.join(', ')}. Prioritize these.` : '';
+
   const prompt = [
     `You are a senior engineer building an interview-prep roadmap for a ${input.role} role${input.company !== 'Unknown' ? ` at ${input.company}` : ''} (${input.mode} focus).`,
     ...(input.focusAreas?.length ? [`Priority focus areas: ${input.focusAreas.join(', ')}.`] : []),
     ...(input.strengths?.length ? [`Known strengths (less time needed): ${input.strengths.join(', ')}.`] : []),
+    pacing,
+    next,
     ``,
     `Return exactly one JSON object, no markdown:`,
     `{"title":"<roadmap title>","summary":"<1-2 sentence overview>","steps":[{"title":"<topic>","desc":"<what to practice and why>","timeEstimate":"<e.g. 3 days>","priority":"HIGH|MEDIUM|LOW","status":"in-progress|pending"}]}`,

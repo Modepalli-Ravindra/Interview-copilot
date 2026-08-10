@@ -9,6 +9,7 @@
 
 import { Router, Request, Response } from 'express';
 import 'dotenv/config';
+import { updateSessionRecord } from './sessions';
 
 const router = Router();
 
@@ -37,6 +38,11 @@ interface RunResult {
   memoryKb: number | null;
   passedCount: number;
   totalCount: number;
+  /** Split counts so the UI can show visible vs hidden separately. */
+  visiblePassedCount: number;
+  visibleTotalCount: number;
+  hiddenPassedCount: number;
+  hiddenTotalCount: number;
   fromMock: boolean;
 }
 
@@ -96,16 +102,21 @@ async function judgeSubmit(sourceCode: string, languageId: number, stdin: string
 }
 
 // Deterministic offline result so the workspace stays usable without the API
-function offlineResult(sourceCode: string, testCases: TestCase[]): RunResult {
+function offlineResult(sourceCode: string, visibleCount: number, hiddenCount: number): RunResult {
   const hasCode = sourceCode.trim().length > 30;
+  const totalCount = visibleCount + hiddenCount;
   return {
     status: hasCode ? 'ACCEPTED' : 'COMPILATION_ERROR',
     stdout: hasCode ? 'Offline sandbox: real execution unavailable.\nAll tests assumed passing (gateway offline).' : null,
     stderr: hasCode ? null : 'Empty submission.',
     timeMs: null,
     memoryKb: null,
-    passedCount: hasCode ? testCases.length : 0,
-    totalCount: testCases.length,
+    passedCount: hasCode ? totalCount : 0,
+    totalCount,
+    visiblePassedCount: hasCode ? visibleCount : 0,
+    visibleTotalCount: visibleCount,
+    hiddenPassedCount: hasCode ? hiddenCount : 0,
+    hiddenTotalCount: hiddenCount,
     fromMock: true,
   };
 }
@@ -116,11 +127,30 @@ router.post('/', async (req: Request, res: Response) => {
     source_code,
     language,
     test_cases,
-  }: { source_code?: string; language?: string; test_cases?: TestCase[] } = req.body || {};
+    hidden_test_cases,
+    expected_complexity,
+    session_id,
+    problem,
+  }: {
+    source_code?: string;
+    language?: string;
+    test_cases?: TestCase[];
+    hidden_test_cases?: TestCase[];
+    expected_complexity?: string | null;
+    session_id?: string;
+    problem?: {
+      id?: string;
+      title?: string;
+      difficulty?: string;
+      tags?: string[];
+      statement?: string;
+    };
+  } = req.body || {};
 
   const code = (source_code || '').trim();
   const lang = (language || 'python').toLowerCase();
   const tests: TestCase[] = Array.isArray(test_cases) ? test_cases : [];
+  const hiddenTests: TestCase[] = Array.isArray(hidden_test_cases) ? hidden_test_cases : [];
   const languageId = LANGUAGE_IDS[lang];
 
   if (!code) {
@@ -130,14 +160,51 @@ router.post('/', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: `Unsupported language: ${lang}` });
   }
 
+  const finish = (data: RunResult) => {
+    if (session_id) {
+      try {
+        updateSessionRecord(session_id, {
+          coding: {
+            problem: problem
+              ? {
+                  id: problem.id,
+                  title: (problem.title || '').slice(0, 200),
+                  difficulty: problem.difficulty,
+                  tags: Array.isArray(problem.tags) ? problem.tags.slice(0, 8) : [],
+                  statement: (problem.statement || '').slice(0, 2000),
+                }
+              : undefined,
+            language: lang,
+            submittedCode: code.slice(0, 12000),
+            expectedComplexity: expected_complexity || null,
+            execution: {
+              status: data.status,
+              passedCount: data.passedCount,
+              totalCount: data.totalCount,
+              timeMs: data.timeMs,
+              memoryKb: data.memoryKb,
+              fromMock: data.fromMock,
+            },
+          },
+        });
+      } catch (err) {
+        console.warn('[Execute] failed to attach coding result to session:', (err as Error).message);
+      }
+    }
+    return res.json({ success: true, data });
+  };
+
   // Live mode: run every test case through Judge0
   if (JUDGE0_URL) {
     try {
+      const allTests = [...tests, ...hiddenTests];
       const outcomes = await Promise.all(
-        tests.map((tc) => judgeSubmit(code, languageId, tc.stdin || '')),
+        allTests.map((tc) => judgeSubmit(code, languageId, tc.stdin || '')),
       );
 
       let passedCount = 0;
+      let visiblePassedCount = 0;
+      let hiddenPassedCount = 0;
       let lastStatusId = 3;
       let combinedStdout = '';
       let combinedStderr = '';
@@ -145,55 +212,68 @@ router.post('/', async (req: Request, res: Response) => {
       let peakMemoryKb = 0;
 
       outcomes.forEach((o, i) => {
-        const expected = (tests[i].expected || '').trim();
+        const isHidden = i >= tests.length;
+        const expected = (allTests[i].expected || '').trim();
         const actual = o.stdout.trim();
         const pass = o.statusId === 3 && actual === expected;
-        if (pass) passedCount += 1;
+        if (pass) {
+          passedCount += 1;
+          if (isHidden) hiddenPassedCount += 1;
+          else visiblePassedCount += 1;
+        }
         if (o.statusId !== 3) lastStatusId = o.statusId;
         totalTimeMs += o.timeMs;
         peakMemoryKb = Math.max(peakMemoryKb, o.memoryKb);
-        combinedStdout += `Test ${i + 1}: ${pass ? 'PASSED' : 'FAILED'}\n`;
+        combinedStdout += `Test ${i + 1}${isHidden ? ' (hidden)' : ''}: ${pass ? 'PASSED' : 'FAILED'}\n`;
         if (!pass && o.stderr) combinedStderr += `Test ${i + 1} stderr:\n${o.stderr}\n`;
       });
 
-      if (tests.length === 0) {
+      let visibleTotalCount = tests.length;
+      let hiddenTotalCount = hiddenTests.length;
+      let totalCount = visibleTotalCount + hiddenTotalCount;
+
+      if (tests.length === 0 && hiddenTests.length === 0) {
         // Free-run (no test harness): report the raw execution result
-        const solo = outcomes[0];
+        const solo = outcomes[0] || { statusId: 3, stdout: '', stderr: '', timeMs: 0, memoryKb: 0 };
         lastStatusId = solo.statusId;
         combinedStdout = solo.stdout;
         combinedStderr = solo.stderr;
         passedCount = lastStatusId === 3 ? 1 : 0;
+        visiblePassedCount = passedCount;
+        visibleTotalCount = 1;
+        totalCount = 1;
         totalTimeMs = solo.timeMs;
         peakMemoryKb = solo.memoryKb;
       }
 
       const finalStatus =
-        passedCount === tests.length && tests.length > 0
+        passedCount === totalCount && totalCount > 0
           ? 'ACCEPTED'
           : lastStatusId === 3
-            ? (tests.length > 0 ? 'WRONG_ANSWER' : 'ACCEPTED')
+            ? (totalCount > 0 ? 'WRONG_ANSWER' : 'ACCEPTED')
             : judgeStatusToFrontend(lastStatusId);
 
-      return res.json({
-        success: true,
-        data: {
-          status: finalStatus,
-          stdout: combinedStdout || null,
-          stderr: combinedStderr || null,
-          timeMs: Math.round(totalTimeMs * 1000),
-          memoryKb: peakMemoryKb,
-          passedCount,
-          totalCount: tests.length,
-          fromMock: false,
-        },
+      return finish({
+        status: finalStatus,
+        stdout: combinedStdout || null,
+        stderr: combinedStderr || null,
+        timeMs: Math.round(totalTimeMs * 1000),
+        memoryKb: peakMemoryKb,
+        passedCount,
+        totalCount,
+        visiblePassedCount,
+        visibleTotalCount,
+        hiddenPassedCount,
+        hiddenTotalCount,
+        fromMock: false,
       });
     } catch (err) {
       console.warn('[Execute] Judge0 unavailable, using offline fallback:', (err as Error).message);
-      return res.json({ success: true, data: offlineResult(code, tests) });
+      return finish(offlineResult(code, tests.length, hiddenTests.length));
     }
   }
 
-  return res.json({ success: true, data: offlineResult(code, tests) });
+  return finish(offlineResult(code, tests.length, hiddenTests.length));
 });
 
 export default router;

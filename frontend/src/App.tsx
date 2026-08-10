@@ -3,10 +3,13 @@ import LandingPage from './pages/LandingPage';
 import DashboardLayout from './components/layout/DashboardLayout';
 import DashboardPage from './pages/DashboardPage';
 import InterviewsPage from './pages/InterviewsPage';
+import MatchingPage from './pages/MatchingPage';
 import CodingPage from './pages/CodingPage';
 import RoadmapPage from './pages/RoadmapPage';
 import HistoryPage from './pages/HistoryPage';
 import SettingsPage from './pages/SettingsPage';
+import CandidatesPage from './pages/CandidatesPage';
+import GithubProjectPage from './pages/GithubProjectPage';
 import InterviewPage from './pages/InterviewPage';
 
 function App() {
@@ -20,7 +23,10 @@ function App() {
         <Route path="/dashboard" element={<DashboardLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="interviews" element={<InterviewsPage />} />
+          <Route path="match" element={<MatchingPage />} />
           <Route path="coding" element={<CodingPage />} />
+          <Route path="candidates" element={<CandidatesPage />} />
+          <Route path="github" element={<GithubProjectPage />} />
           <Route path="roadmap" element={<RoadmapPage />} />
           <Route path="history" element={<HistoryPage />} />
           <Route path="settings" element={<SettingsPage />} />

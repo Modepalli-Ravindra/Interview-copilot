@@ -12,6 +12,9 @@ import problemsRouter from './routes/problems';
 import dashboardRouter from './routes/dashboard';
 import roadmapRouter from './routes/roadmap';
 import githubRouter from './routes/github';
+import intelligenceRouter from './routes/intelligence';
+import candidatesRouter from './routes/candidates';
+import codingRouter from './routes/coding';
 
 const app = express();
 
@@ -59,6 +62,9 @@ app.use('/api/problems', apiLimiter, problemsRouter);
 app.use('/api/dashboard', apiLimiter, dashboardRouter);
 app.use('/api/roadmap',  apiLimiter, roadmapRouter);
 app.use('/api/github',   apiLimiter, githubRouter);
+app.use('/api/intelligence', apiLimiter, intelligenceRouter);
+app.use('/api/candidates', apiLimiter, candidatesRouter);
+app.use('/api/coding',   apiLimiter, codingRouter);
 
 // Standard Error Fallback Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

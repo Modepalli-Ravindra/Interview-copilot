@@ -14,10 +14,20 @@ const LANGUAGES = [
 
 interface CodeWorkspaceProps {
   testCases?: { stdin: string; expected: string }[];
+  hiddenTestCases?: { stdin: string; expected: string }[];
+  expectedComplexity?: string;
+  sessionId?: string;
+  problem?: {
+    id?: string;
+    title?: string;
+    difficulty?: string;
+    tags?: string[];
+    statement?: string;
+  } | null;
   onAccepted?: () => void;
 }
 
-export default function CodeWorkspace({ testCases = [], onAccepted }: CodeWorkspaceProps) {
+export default function CodeWorkspace({ testCases = [], hiddenTestCases, expectedComplexity, sessionId, problem, onAccepted }: CodeWorkspaceProps) {
   const {
     currentCode, editorLanguage, isRunningCode,
     lastCodeResult, updateCode, setEditorLanguage, setRunningCode, setCodeResult,
@@ -38,6 +48,10 @@ export default function CodeWorkspace({ testCases = [], onAccepted }: CodeWorksp
           source_code: currentCode,
           language: editorLanguage,
           test_cases: testCases,
+          hidden_test_cases: hiddenTestCases || [],
+          expected_complexity: expectedComplexity,
+          session_id: sessionId,
+          problem,
         }),
       });
       const json = await res.json();
@@ -265,6 +279,11 @@ export default function CodeWorkspace({ testCases = [], onAccepted }: CodeWorksp
                     border: `1px solid ${lastCodeResult.passedCount === lastCodeResult.totalCount ? 'hsl(142 70% 50% / 0.3)' : 'hsl(35 90% 55% / 0.3)'}`,
                   }}>
                     {lastCodeResult.passedCount}/{lastCodeResult.totalCount} tests passed
+                    {lastCodeResult.visibleTotalCount != null && lastCodeResult.hiddenTotalCount != null && lastCodeResult.hiddenTotalCount > 0 && (
+                      <span style={{ opacity: 0.75, marginLeft: 6 }}>
+                        ({lastCodeResult.visiblePassedCount ?? 0}/{lastCodeResult.visibleTotalCount} + {lastCodeResult.hiddenPassedCount ?? 0}/{lastCodeResult.hiddenTotalCount} hidden)
+                      </span>
+                    )}
                   </span>
                 )}
                 {lastCodeResult.fromMock && (

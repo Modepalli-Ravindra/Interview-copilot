@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   CheckCircle2, Circle, Flame, Code2,
-  Award, Target, Clock, Loader2,
+  Award, Target, Clock, Loader2, Sparkles,
 } from 'lucide-react';
 import CodeWorkspace from '../components/interview/CodeWorkspace';
 import { useInterviewStore } from '../stores/interviewStore';
 import { apiFetch } from '../lib/api';
-import type { Problem } from '../types';
+import type { Problem, GeneratedQuestion } from '../types';
 
 type Difficulty = 'Easy' | 'Medium' | 'Hard';
 
@@ -37,6 +37,9 @@ export default function CodingPage() {
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [difficultyFilter, setDifficultyFilter] = useState<'ALL' | Difficulty>('ALL');
+  const [generated, setGenerated] = useState<GeneratedQuestion | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [solved, setSolved] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem(SOLVED_KEY);
@@ -63,7 +66,40 @@ export default function CodingPage() {
     })();
   }, []);
 
-  const selected = problems.find(p => p.id === selectedId) || problems[0];
+  const buildGeneratedStatement = (q: GeneratedQuestion): string => {
+    const lines: string[] = [q.problemStatement];
+    if (q.constraints.length) lines.push('', '## Constraints', ...q.constraints.map(c => `- ${c}`));
+    if (q.inputFormat) lines.push('', '## Input Format', q.inputFormat);
+    if (q.outputFormat) lines.push('', '## Output Format', q.outputFormat);
+    if (q.examples.length) {
+      lines.push('', '## Examples');
+      for (const ex of q.examples) {
+        lines.push(`**Input:**`, `\`${ex.input}\``, `**Output:**`, `\`${ex.output}\``);
+        if (ex.explanation) lines.push(`- Explanation: ${ex.explanation}`);
+        lines.push('');
+      }
+    }
+    if (q.expectedComplexity) lines.push('', `**Expected complexity:** ${q.expectedComplexity}`);
+    return lines.join('\n');
+  };
+
+  const asProblem = (q: GeneratedQuestion): Problem => ({
+    id: q.id,
+    title: q.title,
+    difficulty: q.difficulty,
+    tags: [q.topic],
+    acceptance: 100,
+    minutes: 30,
+    statement: buildGeneratedStatement(q),
+    testCases: q.testCases,
+  });
+
+  const displayProblems = generated ? [asProblem(generated), ...problems] : problems;
+  const filtered = difficultyFilter === 'ALL'
+    ? displayProblems
+    : displayProblems.filter(p => p.difficulty === difficultyFilter);
+
+  const selected = displayProblems.find(p => p.id === selectedId) || displayProblems[0];
 
   const selectProblem = (p: Problem) => {
     setSelectedId(p.id);
@@ -82,11 +118,39 @@ export default function CodingPage() {
     });
   };
 
-  const filtered = difficultyFilter === 'ALL'
-    ? problems
-    : problems.filter(p => p.difficulty === difficultyFilter);
+  const generateQuestion = async () => {
+    setGenerating(true);
+    setError(null);
+    try {
+      const res = await apiFetch('/api/coding/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          language: 'python',
+          difficulty: difficultyFilter === 'ALL' ? 'Medium' : difficultyFilter,
+        }),
+      });
+      const json = await res.json();
+      if (json.success && json.data?.question) {
+        const q = json.data.question as GeneratedQuestion;
+        setGenerated(q);
+        setSelectedId(q.id);
+        setEditorLanguage('python');
+        updateCode(`# ${q.title}\n# ${q.expectedComplexity || ''}\ndef solution():\n    pass\n`);
+      } else {
+        setError(json.error || 'Failed to generate a question');
+      }
+    } catch (err) {
+      console.error('[Coding] generation failed:', err);
+      setError('Generation service unreachable');
+    } finally {
+      setGenerating(false);
+    }
+  };
 
-  const solvedCount = problems.filter(p => solved.has(p.id)).length;
+  const isGeneratedSelected = generated !== null && selected?.id === generated.id;
+  const solvedCount = problems.filter(p => solved.has(p.id)).length
+    + (generated && solved.has(generated.id) ? 1 : 0);
 
   return (
     <motion.div {...fadePage} style={{ minHeight: '100vh' }}>
@@ -116,6 +180,45 @@ export default function CodingPage() {
           <Award size={15} /> {solvedCount}/{problems.length} solved
         </div>
       </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 12 }}>
+        <p style={{ fontSize: 12.5, color: 'hsl(210 10% 48%)', margin: 0 }}>
+          Generate a fresh question grounded in your session skills — or solve a curated problem below.
+        </p>
+        <motion.button
+          whileHover={{ scale: generating ? 1 : 1.03 }}
+          whileTap={{ scale: generating ? 1 : 0.97 }}
+          onClick={generateQuestion}
+          disabled={generating}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+            padding: '9px 18px', borderRadius: 10, cursor: generating ? 'wait' : 'pointer',
+            background: 'linear-gradient(135deg, hsl(280 70% 45%), hsl(320 75% 55%))',
+            border: 'none', color: 'white',
+            fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-sans)',
+            boxShadow: '0 4px 16px hsl(280 70% 45% / 0.35)',
+          }}
+        >
+          {generating ? (
+            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.9, ease: 'linear' }}>
+              <Loader2 size={14} />
+            </motion.div>
+          ) : (
+            <Sparkles size={14} />
+          )}
+          {generating ? 'Generating…' : 'Generate AI Question'}
+        </motion.button>
+      </div>
+
+      {error && (
+        <div style={{
+          marginBottom: 14, padding: '12px 16px', borderRadius: 12,
+          background: 'hsl(0 85% 60% / 0.1)', border: '1px solid hsl(0 85% 60% / 0.3)',
+          color: 'hsl(0 85% 65%)', fontSize: 13,
+        }}>
+          {error}
+        </div>
+      )}
 
       <div style={{
         display: 'grid', gridTemplateColumns: '340px 1fr', gap: 16,
@@ -189,6 +292,17 @@ export default function CodingPage() {
                     }}>
                       {p.difficulty}
                     </span>
+                    {p.id === generated?.id && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                        color: 'hsl(320 75% 65%)',
+                        background: 'hsl(320 75% 55% / 0.14)',
+                        border: '1px solid hsl(320 75% 55% / 0.3)',
+                        display: 'flex', alignItems: 'center', gap: 3,
+                      }}>
+                        <Sparkles size={9} /> AI
+                      </span>
+                    )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{
@@ -241,7 +355,7 @@ export default function CodingPage() {
                       {selected.difficulty}
                     </span>
                     <span style={{ fontSize: 11, color: 'hsl(210 10% 45%)' }}>
-                      {selected.tags.join(' · ')} · {selected.acceptance}% acceptance · {selected.testCases.length} hidden tests
+                      {selected.tags.join(' · ')} · {selected.acceptance}% acceptance · {isGeneratedSelected ? generated.hiddenTestCases.length : selected.testCases.length} hidden tests
                     </span>
                   </div>
                 </div>
@@ -267,6 +381,8 @@ export default function CodingPage() {
             <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
               <CodeWorkspace
                 testCases={selected.testCases}
+                hiddenTestCases={isGeneratedSelected ? generated.hiddenTestCases : undefined}
+                expectedComplexity={isGeneratedSelected ? generated.expectedComplexity : undefined}
                 onAccepted={() => markSolved(selected.id)}
               />
             </div>

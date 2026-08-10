@@ -3,6 +3,7 @@ import { getSessionRecord, updateSessionRecord } from '../routes/sessions';
 import { gatewayStatus, abortGatewaySession } from '../services/aiGateway';
 import { generateFeedback } from '../services/feedback';
 import { generateRoadmap } from '../services/roadmap';
+import { summarizeMatchReport } from '../services/matchEngine';
 import {
   createInterviewState,
   startInterview,
@@ -48,8 +49,15 @@ async function finalizeSession(namespace: Namespace, sessionId: string, state: I
       role: state.role,
       company: state.company,
       mode: state.mode,
+      difficulty: state.difficulty,
       transcript: state.transcript,
       analysis: state.analysis,
+      resumeProfile: session?.resumeProfile ?? state.resumeProfile ?? null,
+      jdProfile: session?.jdProfile ?? state.jdProfile ?? null,
+      skills: session?.skills ?? state.skills ?? null,
+      matchSummary: session?.matchReport ? summarizeMatchReport(session.matchReport) : (state.matchSummary ?? null),
+      githubAnalysis: session?.githubSummary ?? state.githubSummary ?? null,
+      coding: session?.coding ?? null,
     });
 
     let roadmap = session.roadmap || null;
@@ -134,6 +142,12 @@ export function registerInterviewHandlers(namespace: Namespace) {
         resumeText: record?.resumeText || '',
         jdText: record?.jdText || '',
         githubSummary: record?.githubSummary || '',
+        projectProfile: record?.projectProfileData ? JSON.stringify(record.projectProfileData) : undefined,
+        skills: record?.skills || undefined,
+        resumeProfile: record?.resumeProfile || undefined,
+        jdProfile: record?.jdProfile || undefined,
+        matchSummary: record?.matchReport ? summarizeMatchReport(record.matchReport) : undefined,
+        difficulty: (record?.difficulty as InterviewState['difficulty']) || undefined,
       });
       interviewStates.set(sessionId, state);
       updateSessionRecord(sessionId, { status: 'ACTIVE', startedAt: new Date().toISOString() });

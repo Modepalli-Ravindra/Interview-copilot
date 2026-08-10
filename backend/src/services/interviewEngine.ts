@@ -13,7 +13,24 @@ import {
   type GatewaySession,
 } from './aiGateway';
 
-export type InterviewMode = 'CODING' | 'TECHNICAL' | 'BEHAVIORAL' | 'SYSTEM_DESIGN' | 'PROJECT';
+export type InterviewMode =
+  | 'CODING'
+  | 'TECHNICAL'
+  | 'BEHAVIORAL'
+  | 'SYSTEM_DESIGN'
+  | 'PROJECT'
+  | 'HR'
+  | 'MIXED'
+  | 'RESUME_BASED'
+  | 'JD_BASED'
+  | 'SKILLS_BASED';
+
+export const VALID_MODES: InterviewMode[] = [
+  'CODING', 'TECHNICAL', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT',
+  'HR', 'MIXED', 'RESUME_BASED', 'JD_BASED', 'SKILLS_BASED',
+];
+
+export type InterviewDifficulty = 'Easy' | 'Medium' | 'Hard';
 
 export interface InterviewContext {
   sessionId: string;
@@ -23,6 +40,18 @@ export interface InterviewContext {
   resumeText: string;
   jdText?: string;
   githubSummary?: string;
+  /** Serialized structured ProjectProfile (Phase 4) — richer grounding than githubSummary. */
+  projectProfile?: string;
+  /** Canonicalized resume skills (for combined context). */
+  skills?: string[];
+  /** Structured resume profile summary (from the resume parser). */
+  resumeProfile?: string;
+  /** Structured JD profile summary (from the JD parser). */
+  jdProfile?: string;
+  /** Deterministic resume<->JD match summary (from the match engine). */
+  matchSummary?: string;
+  /** Difficulty driver — influences question depth (default Medium). */
+  difficulty?: InterviewDifficulty;
   /** Optional per-session turn cap (default 8). */
   maxTurns?: number;
 }
@@ -42,6 +71,11 @@ const MODE_PERSONAS: Record<InterviewMode, string> = {
   BEHAVIORAL: 'a Senior Talent Partner running a behavioral interview using the STAR method. Evaluate collaboration, conflict resolution, and ownership.',
   SYSTEM_DESIGN: 'a Principal Architect evaluating scalable, fault-tolerant system design. Probe trade-offs like consistency vs latency, SQL vs NoSQL.',
   PROJECT: 'a Staff Engineer reviewing the candidate\'s past projects in depth — architecture choices, challenges, and measurable outcomes.',
+  HR: 'an experienced HR Business Partner running a realistic HR round. You build rapport, learn the candidate\'s background and goals, and probe fit, motivation, and soft skills with natural follow-ups.',
+  MIXED: 'a versatile interviewer mixing HR, behavioral, technical, and project questions in a realistic interview flow, adapting the depth to the candidate\'s answers.',
+  RESUME_BASED: 'a Senior Interviewer whose questions come exclusively from the candidate\'s actual resume — verifying claims, probing depth on projects, and exploring every listed skill.',
+  JD_BASED: 'a Technical Recruiter whose questions come exclusively from the job description — probing how the candidate satisfies each requirement and responsibility.',
+  SKILLS_BASED: 'a technical interviewer who drills into the candidate\'s declared skills one by one — fundamentals first, then edge cases and practical applications.',
 };
 
 // What the interviewer weighs when evaluating each answer (kept private from
@@ -52,42 +86,156 @@ const MODE_RUBRICS: Record<InterviewMode, string> = {
   BEHAVIORAL: 'STAR shape (situation, task, action, result), specific examples with measurable outcomes, ownership, reflection and learning, and whether claims are grounded rather than generic.',
   SYSTEM_DESIGN: 'Requirements gathering, capacity and scale reasoning, trade-offs between options (consistency vs availability, SQL vs NoSQL), failure handling, and the ability to defend decisions.',
   PROJECT: 'Specificity to their actual code and architecture, decisions and their rationale, challenges and how they were overcome, and measurable outcomes or impact.',
+  HR: 'Communication and clarity, confidence, relevance, structure (STAR-like), technical credibility when describing their own work, ownership, honesty/consistency, and conciseness for a voice interview. Do not fabricate facts about the candidate.',
+  MIXED: 'Balanced assessment of communication (STAR), technical depth and trade-offs, project specificity, and role readiness across every dimension.',
+  RESUME_BASED: 'Accuracy against the resume, depth behind each claim, technical credibility, ownership, and measurable outcomes. Challenge vague or exaggerated claims politely.',
+  JD_BASED: 'Relevance to the job description, evidence of each required skill, hands-on examples, and role readiness. Note honest gaps instead of guessing.',
+  SKILLS_BASED: 'Fundamental understanding of each declared skill, ability to explain trade-offs, practical application, and honesty about depth — probing beyond surface familiarity.',
 };
 
 export const MOCK_MAX_TURNS = 8;
 const MAX_TURNS = 8;
 
+// HR category flow (used in HR and MIXED modes to cover a realistic round).
+export const HR_CATEGORIES = [
+  'Introduction',
+  'Education',
+  'Career goals',
+  'Why this role?',
+  'Why this company?',
+  'Why software development?',
+  'Why AI/ML?',
+  'Resume',
+  'Projects',
+  'Internship / Experience',
+  'Career gap',
+  'Strengths',
+  'Weaknesses',
+  'Failure',
+  'Conflict',
+  'Teamwork',
+  'Leadership',
+  'Pressure',
+  'Time management',
+  'Communication',
+  'Adaptability',
+  'Learning new technology',
+  'Handling unfamiliar tasks',
+  'Debugging/problem solving',
+  'Self-rating',
+  'Salary/relocation if appropriate',
+  'Closing HR questions',
+];
+
+const DIFFICULTY_GUIDANCE: Record<InterviewDifficulty, string> = {
+  Easy: 'Keep questions accessible: definitions, fundamentals, guided problem solving. Offer hints readily.',
+  Medium: 'Balance fundamentals with applied depth: moderate trade-offs, multi-step problems, real-world judgment.',
+  Hard: 'Push hard: deep trade-offs, scaling concerns, complex multi-part problems, and sharp follow-ups on any weak spot.',
+};
+
 // ──────────────────────────────────────────────────────────────
 // Prompt building
 // ──────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(ctx: InterviewContext): string {
+export function buildSystemPrompt(ctx: InterviewContext): string {
   const persona = MODE_PERSONAS[ctx.mode] || MODE_PERSONAS.TECHNICAL;
   const rubric = MODE_RUBRICS[ctx.mode] || MODE_RUBRICS.TECHNICAL;
   const resume = ctx.resumeText?.trim() || 'The candidate did not provide a resume.';
   const jd = ctx.jdText?.trim();
   const github = ctx.githubSummary?.trim();
+  const projectProfile = ctx.projectProfile?.trim();
+  const difficulty = ctx.difficulty || 'Medium';
+  const difficultyGuidance = DIFFICULTY_GUIDANCE[difficulty] || DIFFICULTY_GUIDANCE.Medium;
+  const skills = Array.isArray(ctx.skills) && ctx.skills.length ? ctx.skills.join(', ') : '';
+  const resumeProfile = ctx.resumeProfile?.trim();
+  const jdProfile = ctx.jdProfile?.trim();
+  const matchSummary = ctx.matchSummary?.trim();
+
+  const modeSpecific = () => {
+    switch (ctx.mode) {
+      case 'PROJECT':
+        return [
+          ``,
+          `<github_instructions>`,
+          `- The <github_summary> contains the candidate's real repos: README excerpts, file trees, and actual source code.`,
+          `- Ask pointed questions about specific files, functions, and architectural decisions visible in that code.`,
+          `- Reference concrete file names and code from the summary in your questions. Do not ask generic "tell me about your project" questions when you have their actual code.`,
+          `- Example of a good question: "Your repository uses React with Vite and separates UI into reusable components — what made you choose this structure, and how would you scale it to 50+ pages?"`,
+          `- When a <structured_project_profile> is present, ground questions in its evidence (file paths, API endpoints, data models, and the README claims that were verified against the code).`,
+          `</github_instructions>`,
+        ];
+      case 'HR':
+        return [
+          ``,
+          `<hr_flow>`,
+          `- Work through these HR categories in order, spending roughly one exchange per category: ${HR_CATEGORIES.join(', ')}.`,
+          `- Start with Introduction, then move through Education, Career goals, the "Why" questions, then Resume/Projects/Internship, then behavioral categories, and end with closing questions.`,
+          `- Every question must be personalized: use the candidate's resume, projects, education, and the job description. Never read from a generic script.`,
+          `- After every answer, ask ONE contextual follow-up that depends on what the candidate just said (e.g. if they mention a blockchain project, ask "What made blockchain necessary instead of a traditional database?"). The follow-up must build on their exact words, not a canned list.`,
+          `- Acknowledge briefly, then follow up; do not lecture.`,
+          `</hr_flow>`,
+        ];
+      case 'MIXED':
+        return [
+          ``,
+          `<mixed_flow>`,
+          `- Simulate a realistic multi-round interview: open with HR/intro, move to resume/project discussion, then technical depth, then a closing behavioral question.`,
+          `- Pull material from the resume, job description, and GitHub summary together — combine sources into each question.`,
+          `- After each answer ask one contextual follow-up that depends on the previous answer before switching topics.`,
+          `</mixed_flow>`,
+        ];
+      case 'RESUME_BASED':
+        return [
+          ``,
+          `<resume_instructions>`,
+          `- Every question must trace to a specific claim in <candidate_resume> (a project, skill, education detail, or role).`,
+          `- Verify depth: ask "what exactly did you build/do", "what technology choice did you make and why", "what was the outcome".`,
+          `- Politely challenge vague claims like "contributed to X" by asking for their specific contribution.`,
+          `</resume_instructions>`,
+        ];
+      case 'JD_BASED':
+        return [
+          ``,
+          `<jd_instructions>`,
+          `- Every question must map to a requirement or responsibility in <job_description> (and <jd_profile> if present).`,
+          `- Probe how the candidate satisfies each required skill with concrete evidence from their resume or projects.`,
+          `- Ask them to demonstrate or explain missing/preferred skills honestly.`,
+          `</jd_instructions>`,
+        ];
+      case 'SKILLS_BASED':
+        return [
+          ``,
+          `<skills_instructions>`,
+          `- Drill into each of the candidate's skills one at a time: fundamentals, then a trade-off question, then a practical application question.`,
+          `- Start with the most relevant skills for the target role, then move to secondary skills.`,
+          `- Do not ask about skills that are neither in their resume nor the job description.`,
+          `</skills_instructions>`,
+        ];
+      default:
+        return [];
+    }
+  };
 
   return [
     `You are ${persona}`,
     ``,
-    `You are interviewing a candidate for the role of "${ctx.role}" at "${ctx.company}". Interview mode: ${ctx.mode}.`,
+    `You are interviewing a candidate for the role of "${ctx.role}" at "${ctx.company}". Interview mode: ${ctx.mode}. Difficulty: ${difficulty}.`,
     ``,
     `<candidate_resume>`,
     resume,
     `</candidate_resume>`,
+    ...(resumeProfile ? [``, `<structured_resume_profile>`, resumeProfile, `</structured_resume_profile>`] : []),
     ...(jd ? [``, `<job_description>`, jd, `</job_description>`] : []),
+    ...(jdProfile ? [``, `<structured_jd_profile>`, jdProfile, `</structured_jd_profile>`] : []),
+    ...(matchSummary ? [``, `<match_analysis>`, matchSummary, `</match_analysis>`] : []),
     ...(github ? [``, `<github_summary>`, github, `</github_summary>`] : []),
-    ...(ctx.mode === 'PROJECT'
-      ? [
-          ``,
-          `<github_instructions>`,
-          `- The <github_summary> contains the candidate's real repos: README excerpts, file trees, and actual source code.`,
-          `- In PROJECT mode, ask pointed questions about specific files, functions, and architectural decisions visible in that code.`,
-          `- Reference concrete file names and code from the summary in your questions. Do not ask generic "tell me about your project" questions when you have their actual code.`,
-          `</github_instructions>`,
-        ]
-      : []),
+    ...(projectProfile ? [``, `<structured_project_profile>`, projectProfile, `</structured_project_profile>`] : []),
+    ...(skills ? [``, `<normalized_skills>`, skills, `</normalized_skills>`] : []),
+    ...modeSpecific(),
+    ``,
+    `<difficulty_guidance>`,
+    difficultyGuidance,
+    `</difficulty_guidance>`,
     ``,
     `<evaluation_rubric>`,
     `Weigh every answer against this rubric for ${ctx.mode} mode:`,
@@ -97,6 +245,7 @@ function buildSystemPrompt(ctx: InterviewContext): string {
     ``,
     `<operating_rules>`,
     `- Personalize every question to the candidate's resume and the target role. Do not ask generic questions when the resume gives you material.`,
+    `- Combine all sources (resume + job description + GitHub + skills) into the questions where possible.`,
     `- Speak in voice-friendly language, maximum 3 sentences per turn.`,
     `- After each answer, evaluate it against the rubric:`,
     `  * Strong answer — acknowledge briefly (one short clause), then ask ONE probing follow-up that goes one level deeper on the same topic before moving on.`,
@@ -185,6 +334,13 @@ export async function createInterviewState(ctx: InterviewContext): Promise<Inter
   };
 }
 
+export function normalizeDifficulty(value: string | undefined): InterviewDifficulty {
+  const v = (value || '').toLowerCase();
+  if (v.includes('easy') || v.includes('junior')) return 'Easy';
+  if (v.includes('hard') || v.includes('staff') || v.includes('senior')) return 'Hard';
+  return 'Medium';
+}
+
 export interface StartResult {
   analysis: InterviewState['analysis'];
   question: string;
@@ -234,6 +390,11 @@ const CLOSING_LINES: Record<InterviewMode, string> = {
   BEHAVIORAL: 'That completes the behavioral portion — generating your feedback report now with notes on structure and outcomes. Well done!',
   SYSTEM_DESIGN: 'That wraps the system design round — generating your feedback report now with scale and trade-off observations. Excellent work!',
   PROJECT: 'That covers your project experience — generating your feedback report now with specifics from your code. Great session!',
+  HR: 'That completes the HR round — generating your feedback report now with notes on communication, clarity, and role fit. Well done!',
+  MIXED: 'That completes your mixed interview — generating your feedback report now across HR, technical, and project dimensions. Great session!',
+  RESUME_BASED: 'That covers your resume in depth — generating your feedback report now with claims-verification notes. Nice work!',
+  JD_BASED: 'That covers the job description — generating your feedback report now with role-readiness notes. Great session!',
+  SKILLS_BASED: 'That covers your skill set — generating your feedback report now with depth and gap observations. Well done!',
 };
 
 function closingLine(mode: InterviewMode): string {
