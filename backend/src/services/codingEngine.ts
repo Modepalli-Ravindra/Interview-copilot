@@ -393,9 +393,10 @@ function pick(variantSeed: string): number {
 }
 
 function templateQuestion(language: string, difficulty: Difficulty, topic: string, seed: string): CodingQuestion {
+  const executableTemplates = TEMPLATES.filter((t) => !NON_EXECUTABLE_TOPICS.has(t.topic));
   const topics = topic ? [topic] : CODING_TOPICS;
-  const idx = pick(seed) % TEMPLATES.length;
-  const tpl = TEMPLATES.find((t) => t.topic === topics.find((tp) => t.topic === tp)) || TEMPLATES[idx];
+  const idx = pick(seed) % executableTemplates.length;
+  const tpl = executableTemplates.find((t) => t.topic === topics.find((tp) => t.topic === tp)) || executableTemplates[idx];
   const variant = String((pick(seed + 'x') % 90) + 10);
   const built = tpl.build(variant);
   const title = tpl.title(variant);

@@ -359,7 +359,7 @@ export function parseRepoUrl(url: string): { owner: string; repo: string } | nul
     return { owner, repo };
   }
   // SSRF-safe: only github.com (optionally www./http) URLs are accepted.
-  const m = trimmed.match(/^https?:\/\/(?:www\.)?github\.com\/([a-zA-Z0-9-]{1,39})\/([a-zA-Z0-9_.-]{1,100})(?:\.git)?\/?$/i);
+  const m = trimmed.match(/^https?:\/\/(?:www\.)?github\.com\/([a-zA-Z0-9-]{1,39})\/([a-zA-Z0-9_.-]+?)(?:\.git)?\/?$/i);
   if (m) return { owner: m[1], repo: m[2] };
   return null;
 }

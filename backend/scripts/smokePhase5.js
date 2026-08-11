@@ -18,6 +18,7 @@ const path = require('path');
 process.env.SUPABASE_URL = '';
 process.env.SUPABASE_KEY = '';
 process.env.DATABASE_URL = '';
+process.env.AUTH_TEST_MODE = 'true';
 process.env.JUDGE0_URL = 'http://127.0.0.1:9'; // closed port → offline fallback
 process.env.OMNIROUTE_URL = 'disabled';
 process.env.OPENCODE_SERVER_URL = 'disabled';

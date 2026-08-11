@@ -62,6 +62,10 @@ export const SCHEMA_SQL = `
   alter table sessions add column if not exists project_index        jsonb;
   alter table sessions add column if not exists github_analysis      text not null default '';
   alter table sessions add column if not exists github_analyzed_at   timestamptz;
+  -- Phase 7: auth ownership (user_id) + voice metadata (additive, appended so
+  -- positional UPSERT param order is untouched).
+  alter table sessions add column if not exists user_id uuid;
+  alter table sessions add column if not exists voice jsonb;
 `;
 
 const UPSERT_SQL = `
@@ -71,14 +75,16 @@ const UPSERT_SQL = `
     coding_interview,
     resume_file_key, resume_file_url, resume_file_name,
     status, created_at, started_at, score, duration_ms, feedback, roadmap, transcript,
-    project_profile_data, project_index, github_analysis, github_analyzed_at
+    project_profile_data, project_index, github_analysis, github_analyzed_at,
+    user_id, voice
   ) values (
     $1, $2, $3, $4, $5, $6, $7, $8,
     $9, $10, $11, $12, $13, $14, $15, $16,
     $17,
     $18, $19, $20,
     $21, $22, $23, $24, $25, $26, $27, $28,
-    $29, $30, $31, $32
+    $29, $30, $31, $32,
+    $33, $34
   )
   on conflict (id) do update set
     mode = excluded.mode,
@@ -111,7 +117,9 @@ const UPSERT_SQL = `
     project_profile_data = excluded.project_profile_data,
     project_index = excluded.project_index,
     github_analysis = excluded.github_analysis,
-    github_analyzed_at = excluded.github_analyzed_at
+    github_analyzed_at = excluded.github_analyzed_at,
+    user_id = excluded.user_id,
+    voice = excluded.voice
 `;
 
 export function toRow(rec: Record<string, any>) {
@@ -148,6 +156,8 @@ export function toRow(rec: Record<string, any>) {
     rec.projectIndex ?? null,
     rec.githubAnalysis ?? '',
     rec.githubAnalyzedAt ?? null,
+    rec.userId ?? null,
+    rec.voice ?? null,
   ];
 }
 
@@ -185,6 +195,8 @@ export function fromRow(row: any): Record<string, any> {
     projectIndex: row.project_index ?? null,
     githubAnalysis: row.github_analysis ?? '',
     githubAnalyzedAt: row.github_analyzed_at ? new Date(row.github_analyzed_at).toISOString() : null,
+    userId: row.user_id ?? null,
+    voice: row.voice ?? null,
   };
 }
 

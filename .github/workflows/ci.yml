@@ -34,6 +34,59 @@ jobs:
       - name: Type-check & compile
         run: npm run build
 
+  backend-tests:
+    name: Backend (offline deterministic suites)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile
+        run: npm run build
+
+      - name: Auth + ownership (27 checks)
+        run: node scripts/smokeAuth.js
+
+      - name: DB persistence round-trip (user_id + voice, reload)
+        run: node scripts/smokePersistence.js
+
+      - name: Core REST smoke + persistence (26 checks)
+        run: node scripts/smokeIntelligence.js
+
+      - name: Coding engine (phase 3, 19 checks)
+        run: node scripts/smokePhase3.js
+
+      - name: Adaptive coding interview (phase 5, 29 checks)
+        run: node scripts/smokePhase5.js
+
+      - name: Coding metrics (phase 5 metrics, 37 checks)
+        run: node scripts/smokePhase5Metrics.js
+
+      - name: Realtime voice (phase 6, 106 checks)
+        run: node scripts/smokePhase6.js
+
+      - name: Resume/JD intelligence (58 checks)
+        run: node scripts/testIntelligence.js
+
+      - name: Resume/JD matching (42 checks)
+        run: node scripts/testResumeJdMatch.js
+
+      - name: GitHub analyzer (104 checks)
+        run: node scripts/testGithubAnalyzer.js
+
   frontend:
     name: Frontend (lint + build)
     runs-on: ubuntu-latest
@@ -61,17 +114,53 @@ jobs:
         run: npm run build
 
   dockerfile:
-    name: Validate Dockerfiles
+    name: Validate + boot containers
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Build backend image
-        run: docker build -f backend/Dockerfile -t interviewpilot-backend:ci .
+        run: docker build -f backend/Dockerfile -t interviewpilot-backend:ci ./backend
 
       - name: Build Render image
         run: docker build -f backend/Dockerfile.render -t interviewpilot-render:ci ./backend
 
       - name: Lint supervisor script
         run: bash -n backend/supervisor.sh
+
+      - name: Boot backend image and probe health
+        run: |
+          docker run -d --name ip-backend-smoke \
+            -e NODE_ENV=production -e JWT_SECRET="$(openssl rand -hex 32)" \
+            -e FRONTEND_URL=http://localhost:5173 -e PORT=3000 \
+            -p 3000:3000 interviewpilot-backend:ci
+          ok=""
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:3000/api/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 2
+          done
+          docker logs ip-backend-smoke 2>&1 | tail -30 || true
+          docker rm -f ip-backend-smoke >/dev/null 2>&1 || true
+          if [ -z "$ok" ]; then
+            echo "::error::backend container never became healthy"
+            exit 1
+          fi
+
+      - name: Boot Render image (supervisor + OmniRoute) and probe health
+        run: |
+          docker run -d --name ip-render-smoke \
+            -e NODE_ENV=production -e JWT_SECRET="$(openssl rand -hex 32)" \
+            -e FRONTEND_URL=http://localhost:5173 -e PORT=3000 \
+            -p 3001:3000 interviewpilot-render:ci
+          ok=""
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:3001/api/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 2
+          done
+          docker logs ip-render-smoke 2>&1 | tail -60 || true
+          docker rm -f ip-render-smoke >/dev/null 2>&1 || true
+          if [ -z "$ok" ]; then
+            echo "::error::Render container (supervisor + OmniRoute) never became healthy"
+            exit 1
+          fi

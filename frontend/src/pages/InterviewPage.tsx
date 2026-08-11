@@ -1,15 +1,16 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Code2, Layers, ChevronLeft, Timer, Settings2, CheckCircle2, XCircle, MessageSquare, Radio, Sparkles, FileText, AlertTriangle, X } from 'lucide-react';
+import { Code2, Layers, ChevronLeft, Timer, Settings2, CheckCircle2, XCircle, MessageSquare, Radio, Sparkles, FileText, AlertTriangle, X, Loader2, ShieldAlert } from 'lucide-react';
 import VoiceWidget from '../components/interview/VoiceWidget';
 import TranscriptPanel from '../components/interview/TranscriptPanel';
 import CodeWorkspace from '../components/interview/CodeWorkspace';
 import AiAvatar from '../components/interview/AiAvatar';
 import { useInterviewStore } from '../stores/interviewStore';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
-import { socketService } from '../services/socketService';
-import { apiFetch } from '../lib/api';
+import { socketService, classifyServerEventError } from '../services/socketService';
+import { apiFetch, getAuthToken, clearAuthToken } from '../lib/api';
+import { playChime } from '../lib/voice';
 import type { Problem, FeedbackReport, GeneratedQuestion } from '../types';
 
 type TabMode = 'transcript' | 'code' | 'problem';
@@ -32,6 +33,100 @@ const severityColor: Record<'HIGH' | 'MEDIUM' | 'LOW', string> = {
 const scoreColor = (s: number) =>
   s >= 90 ? 'hsl(142 70% 50%)' : s >= 75 ? 'hsl(35 90% 55%)' : 'hsl(0 85% 60%)';
 
+const HANDSHAKE_TIMEOUT_MS = 15000;
+
+type ConnectionPhase = 'auth-required' | 'connecting' | 'auth-error' | 'error' | 'ready';
+
+interface InterviewConnState {
+  phase: ConnectionPhase;
+  message?: string;
+}
+
+function ConnectionGate({ state, onRetry, onLogin, onDashboard }: {
+  state: InterviewConnState;
+  onRetry: () => void;
+  onLogin: () => void;
+  onDashboard: () => void;
+}) {
+  const primaryBtn: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '11px 22px', borderRadius: 10, border: 'none', cursor: 'pointer',
+    fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 700,
+    background: 'linear-gradient(135deg, hsl(176 40% 45%), hsl(174 85% 60%))',
+    color: 'hsl(220 15% 5%)',
+  };
+  const ghostBtn: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '11px 22px', borderRadius: 10, cursor: 'pointer',
+    fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 600,
+    background: 'transparent', color: 'hsl(210 10% 55%)',
+    border: '1px solid hsl(215 15% 22%)',
+  };
+
+  let icon: React.ReactNode;
+  let title: string;
+  let body: string;
+  let actions: React.ReactNode;
+
+  if (state.phase === 'auth-required' || state.phase === 'auth-error') {
+    icon = <ShieldAlert size={34} color="hsl(35 90% 60%)" />;
+    title = state.phase === 'auth-required' ? 'Sign in required' : 'Session expired';
+    body = state.message || 'Please sign in to continue your interview session.';
+    actions = (
+      <>
+        <button onClick={onLogin} style={primaryBtn}>Go to Login</button>
+        <button onClick={onDashboard} style={ghostBtn}>Back to Dashboard</button>
+      </>
+    );
+  } else if (state.phase === 'connecting') {
+    icon = (
+      <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.9, ease: 'linear' }}>
+        <Loader2 size={34} color="hsl(174 85% 65%)" />
+      </motion.div>
+    );
+    title = 'Connecting';
+    body = 'Connecting to your interview session…';
+    actions = (
+      <button onClick={onDashboard} style={ghostBtn}>Back to Dashboard</button>
+    );
+  } else {
+    icon = <AlertTriangle size={34} color="hsl(35 90% 60%)" />;
+    title = 'Connection problem';
+    body = state.message || 'Unable to connect to the interview session.';
+    actions = (
+      <>
+        <button onClick={onRetry} style={primaryBtn}>Retry</button>
+        <button onClick={onDashboard} style={ghostBtn}>Back to Dashboard</button>
+      </>
+    );
+  }
+
+  return (
+    <div style={{
+      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'hsl(220 15% 5%)', fontFamily: 'var(--font-sans)', padding: 24,
+    }}>
+      <div className="glass" style={{
+        maxWidth: 420, width: '100%', borderRadius: 18, padding: 36,
+        textAlign: 'center',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
+          {icon}
+        </div>
+        <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: 'hsl(210 10% 90%)' }}>
+          {title}
+        </h2>
+        <p style={{ margin: '10px 0 24px', fontSize: 13, lineHeight: 1.6, color: 'hsl(210 10% 52%)' }}>
+          {body}
+        </p>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+          {actions}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function InterviewPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
@@ -48,10 +143,16 @@ export default function InterviewPage() {
   const [showReport, setShowReport] = useState(false);
   const [sessionInfo, setSessionInfo] = useState<{ role: string; company: string; mode: string }>({ role: 'Software Engineer', company: 'Unknown', mode: 'TECHNICAL' });
 
+  // Connection handshake: explicit, never silently stuck.
+  const [connState, setConnState] = useState<InterviewConnState>({ phase: 'connecting' });
+  const [joinAttempt, setJoinAttempt] = useState(0);
+  const handshakeTimerRef = useRef<number | null>(null);
+  const completeRef = useRef(false);
+
   const {
     setConnected, setRecording, setPlayingAudio,
     setAudioAmplitudes, addTranscript, isRecording, isPlayingAudio,
-    audioAmplitudes, speechEnabled, transcript,
+    speechEnabled, transcript,
   } = useInterviewStore();
 
   const { supported: synthesisSupported, speak: synthesisSpeak, cancel: synthesisCancel } = useSpeechSynthesis();
@@ -105,8 +206,42 @@ export default function InterviewPage() {
   }, [sessionId]);
 
   useEffect(() => {
-    const socket = socketService.connect();
+    // No token -> don't even attempt a doomed connection; show an action.
+    const token = getAuthToken();
+    if (!token) {
+      setConnected(false);
+      setRecording(false);
+      setPlayingAudio(false);
+      setConnState({ phase: 'auth-required' });
+      return;
+    }
+
+    completeRef.current = false;
+    setConnState({ phase: 'connecting' });
+
+    const clearHandshake = () => {
+      if (handshakeTimerRef.current != null) {
+        window.clearTimeout(handshakeTimerRef.current);
+        handshakeTimerRef.current = null;
+      }
+    };
+
+    const finishReady = () => {
+      clearHandshake();
+      setConnState({ phase: 'ready' });
+    };
+
+    const socket = socketService.connect((err) => {
+      if (err.type === 'AUTH_ERROR') {
+        clearAuthToken();
+        setConnState({ phase: 'auth-error', message: 'Your session has expired. Please sign in again.' });
+      } else {
+        setConnState({ phase: 'error', message: 'Unable to connect to the interview session. Check your network and try again.' });
+      }
+    });
     setConnected(true);
+    setRecording(false);
+    setPlayingAudio(false);
 
     // Load session metadata + a problem for CODING/TECHNICAL modes
     (async () => {
@@ -115,6 +250,11 @@ export default function InterviewPage() {
           apiFetch(`/api/sessions/${sessionId}`),
           apiFetch('/api/problems'),
         ]);
+        if (sRes.status === 401) {
+          clearAuthToken();
+          setConnState({ phase: 'auth-error', message: 'Your session has expired. Please sign in again.' });
+          return;
+        }
         const sJson = await sRes.json();
         let mode = 'TECHNICAL';
         if (sJson.success && sJson.data) {
@@ -127,7 +267,9 @@ export default function InterviewPage() {
           if (sJson.data.feedback) setFeedback(sJson.data.feedback);
           if (sJson.data.status === 'COMPLETED') {
             setInterviewComplete(true);
+            completeRef.current = true;
             setActiveTab('transcript');
+            finishReady();
           }
         }
         const pJson = await pRes.json();
@@ -181,6 +323,17 @@ export default function InterviewPage() {
     socket.on('connect', onConnected);
     if (socket.connected) onConnected();
 
+    const onServerError = (payload: unknown) => {
+      const classified = classifyServerEventError(payload);
+      if (classified.type === 'AUTH_ERROR') {
+        clearAuthToken();
+        setConnState({ phase: 'auth-error', message: 'Your session has expired. Please sign in again.' });
+      } else {
+        setConnState({ phase: 'error', message: classified.message || 'Unable to connect to the interview session.' });
+      }
+    };
+    socket.on('error', onServerError);
+
     socket.on('session_joined', (data: any) => {
       if (data?.gateway) {
         setGateway({
@@ -189,7 +342,11 @@ export default function InterviewPage() {
           fromMock: Boolean(data.gateway.fromMock),
         });
       }
-      if (data?.completed) setInterviewComplete(true);
+      if (data?.completed) {
+        setInterviewComplete(true);
+        completeRef.current = true;
+      }
+      finishReady();
     });
 
     socket.on('resume_analysis', (data: any) => {
@@ -215,17 +372,42 @@ export default function InterviewPage() {
 
     socket.on('session_ended', () => {
       setInterviewComplete(true);
+      completeRef.current = true;
+      playChime();
       loadFeedback();
     });
 
+    // If the live connection drops mid-interview, surface an actionable state
+    // instead of hanging silently. Transient drops auto-recover via socket.io
+    // reconnection + our re-join on `connect`.
+    socket.on('disconnect', (reason) => {
+      if (reason === 'io client disconnect' || completeRef.current) return;
+      setConnState((prev) => {
+        if (prev.phase === 'ready' || prev.phase === 'connecting') {
+          return { phase: 'error', message: 'Connection to the interview session was lost.' };
+        }
+        return prev;
+      });
+    });
+
+    // Handshake watchdog: never leave the user on an indefinite "connecting…".
+    handshakeTimerRef.current = window.setTimeout(() => {
+      setConnState((prev) =>
+        prev.phase === 'ready'
+          ? prev
+          : { phase: 'error', message: 'Unable to connect to the interview session. Please try again.' },
+      );
+    }, HANDSHAKE_TIMEOUT_MS);
+
     return () => {
+      clearHandshake();
       socketService.disconnect();
       setConnected(false);
       setRecording(false);
       setPlayingAudio(false);
       synthesisCancel();
     };
-  }, [sessionId, addTranscript, setConnected, setRecording, setPlayingAudio, setAudioAmplitudes, synthesisCancel, loadFeedback]);
+  }, [sessionId, joinAttempt, addTranscript, setConnected, setRecording, setPlayingAudio, setAudioAmplitudes, synthesisCancel, loadFeedback]);
 
   // ── Send a spoken answer to the AI engine ────────────
   const handleVoiceAnswer = useCallback((spokenText: string) => {
@@ -270,6 +452,18 @@ export default function InterviewPage() {
       : isListening
         ? { text: 'Listening to you…', color: 'hsl(142 70% 50%)' }
         : { text: 'AI Interviewer', color: 'hsl(210 10% 55%)' };
+
+  // Clear, actionable state for the connection handshake — never a silent hang.
+  if (connState.phase !== 'ready') {
+    return (
+      <ConnectionGate
+        state={connState}
+        onRetry={() => { setConnState({ phase: 'connecting' }); setJoinAttempt(n => n + 1); }}
+        onLogin={() => navigate('/auth')}
+        onDashboard={() => navigate('/dashboard/interviews')}
+      />
+    );
+  }
 
   return (
     <div style={{
@@ -475,7 +669,7 @@ export default function InterviewPage() {
 
         {/* Right: AI avatar + voice sidebar */}
         <aside style={{
-          width: 400, flexShrink: 0,
+          flex: 1,
           borderLeft: '1px solid hsl(215 15% 13%)',
           background: 'hsl(215 15% 6%)',
           padding: '24px 20px',
@@ -490,7 +684,6 @@ export default function InterviewPage() {
             <AiAvatar
               isSpeaking={isPlayingAudio}
               isListening={isListening}
-              amplitudes={audioAmplitudes}
             />
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8,

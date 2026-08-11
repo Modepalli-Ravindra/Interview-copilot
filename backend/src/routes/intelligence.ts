@@ -18,7 +18,7 @@ import multer from 'multer';
 import { parseResumeFile, parseResumeText, sanitizeResumeProfile, type ResumeProfile } from '../services/resumeParser';
 import { parseJdFile, parseJdText, sanitizeJdProfile, type JdProfile } from '../services/jdParser';
 import { matchResumeToJd } from '../services/matchEngine';
-import { getSessionRecord, updateSessionRecord } from './sessions';
+import { getSessionRecord, getOwnedSessionRecord, updateSessionRecord } from './sessions';
 import { uploadResumeFile, getResumeFile, isStorageConfigured } from '../services/storage';
 
 const router = Router();
@@ -186,11 +186,12 @@ router.post('/match', async (req: Request, res: Response) => {
     let jp: JdProfile | undefined = isJdProfile(jdProfile) ? jdProfile : undefined;
 
     if (sessionId && typeof sessionId === 'string') {
-      const record = getSessionRecord(sessionId);
-      if (record) {
-        rp = rp || (isResumeProfile(record.resumeProfileData) ? record.resumeProfileData : undefined);
-        jp = jp || (isJdProfile(record.jdProfileData) ? record.jdProfileData : undefined);
+      const record = getOwnedSessionRecord(sessionId, req.user?.userId);
+      if (!record) {
+        return res.status(404).json({ success: false, error: 'Session not found' });
       }
+      rp = rp || (isResumeProfile(record.resumeProfileData) ? record.resumeProfileData : undefined);
+      jp = jp || (isJdProfile(record.jdProfileData) ? record.jdProfileData : undefined);
     }
 
     if (!rp && typeof resumeText === 'string' && resumeText.trim()) {

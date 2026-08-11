@@ -3,6 +3,7 @@ import {
   LayoutDashboard, Mic, Code2, Brain, History,
   Settings, LogOut, Target, Users, GitBranch,
 } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard',    path: '/dashboard',             end: true },
@@ -18,6 +19,7 @@ const navItems = [
 
 export default function DashboardLayout() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   return (
     <div style={{
@@ -103,16 +105,19 @@ export default function DashboardLayout() {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 13, fontWeight: 700, color: 'white', flexShrink: 0,
             }}>
-              C
+              {user?.name?.charAt(0).toUpperCase() || 'U'}
             </div>
             <div style={{ overflow: 'hidden', flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'hsl(210 10% 88%)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                Clara Developer
+                {user?.name || 'User'}
               </div>
-              <div style={{ fontSize: 11, color: 'hsl(210 10% 50%)' }}>Candidate</div>
+              <div style={{ fontSize: 11, color: 'hsl(210 10% 50%)' }}>{user?.email || 'Candidate'}</div>
             </div>
             <button
-              onClick={() => navigate('/')}
+              onClick={() => {
+                logout();
+                navigate('/auth');
+              }}
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}
               title="Sign out"
             >

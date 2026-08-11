@@ -6,8 +6,9 @@ import {
   Sparkles, ChevronDown, Play, Clock, TrendingUp, ArrowRight,
   FileText, UploadCloud, Loader2, X, Link2, Unplug, AlignLeft, Target,
 } from 'lucide-react';
-import type { InterviewSession, GitHubProfile, RepoDetail, ResumeProfile, JdProfile, MatchReport } from '../types';
+import type { InterviewSession, GitHubProfile, RepoDetail, ResumeProfile, JdProfile, MatchReport, ProjectProfile } from '../types';
 import { apiFetch } from '../lib/api';
+import { getVoicePrefs, setVoicePrefs, detectVoiceSupport, type VoicePrefs, type VoiceSupport } from '../lib/voice';
 
 type InterviewMode = 'CODING' | 'BEHAVIORAL' | 'SYSTEM_DESIGN' | 'PROJECT' | 'TECHNICAL' | 'HR' | 'MIXED' | 'RESUME_BASED' | 'JD_BASED' | 'SKILLS_BASED' | 'CODING_INTERVIEW';
 type InterviewDifficulty = 'Easy' | 'Medium' | 'Hard';
@@ -94,8 +95,31 @@ export default function InterviewsPage() {
   const [deepScan, setDeepScan] = useState(true);
   const [jd, setJd] = useState('');
   const [isStarting, setIsStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
   const [isAnalyzingResume, setIsAnalyzingResume] = useState(false);
   const [analysis, setAnalysis] = useState<{ summary: string; strengths: string[]; focusAreas: string[]; suggestedQuestions: string[] } | null>(null);
+
+  // Voice interview prefs (persisted) + mic/synthesis capability probe
+  const [voicePrefs, setVoicePrefsState] = useState<VoicePrefs>(() => getVoicePrefs());
+  const [voiceSupport, setVoiceSupport] = useState<VoiceSupport>({ sttSupported: false, ttsSupported: false });
+
+  useEffect(() => {
+    let cancelled = false;
+    detectVoiceSupport().then((support) => {
+      if (!cancelled) setVoiceSupport(support);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const updateVoicePrefs = (patch: Partial<VoicePrefs>) => {
+    setVoicePrefsState((prev) => {
+      const next = { ...prev, ...patch };
+      setVoicePrefs(next);
+      return next;
+    });
+  };
 
   // Real session list from the backend
   const [sessions, setSessions] = useState<InterviewSession[]>([]);
@@ -181,6 +205,7 @@ export default function InterviewsPage() {
 
   const startInterview = async () => {
     setIsStarting(true);
+    setStartError(null);
     try {
       const useDeep = selectedMode === 'PROJECT' && deepScan;
       const summary = useDeep ? buildDeepSummary() || lightSummary : lightSummary;
@@ -201,6 +226,10 @@ export default function InterviewsPage() {
           resumeFileKey: resume?.fileKey || undefined,
           resumeFileUrl: resume?.fileUrl || undefined,
           resumeFileName: resume?.fileKey ? resume.name : undefined,
+          voiceMode: voicePrefs.mode,
+          voiceEnabled: voicePrefs.enabled,
+          sttSupported: voiceSupport.sttSupported,
+          ttsSupported: voiceSupport.ttsSupported,
         }),
       });
       const json = await res.json();
@@ -211,7 +240,8 @@ export default function InterviewsPage() {
       throw new Error(json.error || 'Failed to create session');
     } catch (err) {
       console.error('[Interviews] start failed:', err);
-      navigate('/interview/demo-session-001');
+      const msg = err instanceof Error ? err.message : 'Failed to start the interview. Please try again.';
+      setStartError(msg);
     } finally {
       setIsStarting(false);
     }
@@ -296,6 +326,44 @@ export default function InterviewsPage() {
     if (!username) return;
     setGithub(g => ({ ...g, connecting: true, error: null }));
     try {
+      const looksLikeRepo =
+        /^https?:\/\/(www\.)?github\.com\/[\w.-]+\/[\w.-]+(\/)?$/i.test(username) ||
+        /^[\w.-]+\/[\w.-]+(\.git)?$/i.test(username) ||
+        /^git@github\.com:[\w.-]+\/[\w.-]+(\.git)?$/i.test(username);
+
+      if (looksLikeRepo) {
+        const res = await apiFetch('/api/github/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: username }),
+        });
+        const json = await res.json();
+        if (json.success && json.data?.profile) {
+          const p = json.data.profile as ProjectProfile;
+          const profile: GitHubProfile = {
+            username: p.owner,
+            name: p.fullName || p.owner,
+            avatar: `https://github.com/${p.owner}.png`,
+            bio: p.description || '',
+            followers: 0,
+            publicRepos: 1,
+            topLanguages: p.languages.slice(0, 6),
+            topRepos: [{
+              name: p.repo,
+              description: p.description,
+              language: p.primaryLanguage,
+              stars: p.stars,
+              url: p.repoUrl,
+            }],
+            totalStars: p.stars,
+          };
+          setGithub({ connecting: false, connected: true, profile, error: null });
+          return;
+        }
+        setGithub(g => ({ ...g, connecting: false, error: json.error || 'GitHub analysis failed' }));
+        return;
+      }
+
       const res = await apiFetch(`/api/github/${encodeURIComponent(username)}`);
       const json = await res.json();
       if (json.success && json.data) {
@@ -550,6 +618,77 @@ export default function InterviewsPage() {
           </motion.button>
         </div>
 
+        {startError && (
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10,
+            borderRadius: 12, padding: '12px 14px', marginBottom: 20,
+            background: 'hsl(0 85% 50% / 0.08)', border: '1px solid hsl(0 85% 50% / 0.35)',
+          }}>
+            <X size={16} color="hsl(0 85% 65%)" style={{ marginTop: 2, flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'hsl(0 85% 70%)' }}>
+                Couldn't start the interview
+              </p>
+              <p style={{ margin: '3px 0 0', fontSize: 12, lineHeight: 1.5, color: 'hsl(210 10% 55%)' }}>
+                {startError} Please check your connection and try again.
+              </p>
+            </div>
+            <button
+              onClick={() => setStartError(null)}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'hsl(210 10% 45%)', fontFamily: 'var(--font-sans)',
+                padding: 2,
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {/* ── Voice settings (persisted) ── */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12,
+          borderRadius: 12, padding: '12px 14px', marginBottom: 20,
+          background: 'hsl(215 15% 9%)', border: '1px solid hsl(215 15% 16%)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 30, height: 30, borderRadius: 8,
+              background: voicePrefs.enabled ? 'hsl(176 40% 45% / 0.18)' : 'hsl(215 15% 14%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Mic size={15} color={voicePrefs.enabled ? 'hsl(174 85% 70%)' : 'hsl(210 10% 50%)'} />
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'hsl(210 10% 85%)' }}>Voice interview</div>
+              <div style={{ fontSize: 11.5, color: 'hsl(210 10% 48%)' }}>
+                {voiceSupport.sttSupported
+                  ? 'Microphone detected — answers spoken aloud.'
+                  : 'No microphone found — answers will be typed.'}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer', fontSize: 12.5, color: 'hsl(210 10% 65%)' }}>
+              <input
+                type="checkbox"
+                checked={voicePrefs.enabled}
+                onChange={(e) => updateVoicePrefs({ enabled: e.target.checked })}
+              />
+              Voice on
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer', fontSize: 12.5, color: 'hsl(210 10% 65%)' }}>
+              <input
+                type="checkbox"
+                checked={voicePrefs.mode === 'voice'}
+                onChange={(e) => updateVoicePrefs({ mode: e.target.checked ? 'voice' : 'text' })}
+              />
+              Spoken answers
+            </label>
+          </div>
+        </div>
+
         {/* ── Interview context: resume / GitHub / JD ── */}
         <div style={{ marginTop: 4 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -786,14 +925,14 @@ export default function InterviewsPage() {
                     Link a GitHub profile
                   </p>
                   <p style={{ fontSize: 11.5, color: 'hsl(210 10% 48%)', lineHeight: 1.5, marginBottom: 10 }}>
-                    The AI uses your public repos in Project & Technical modes.
+                    The AI uses your public repos in Project &amp; Technical modes. Enter a username or a repository URL.
                   </p>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <input
                       value={githubUsername}
                       onChange={e => setGithubUsername(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') handleGithubConnect(); }}
-                      placeholder="github username"
+                      placeholder="github username or repo URL"
                       style={{
                         flex: 1, minWidth: 0, padding: '7px 10px', borderRadius: 8,
                         background: 'hsl(215 15% 8%)', color: 'hsl(210 10% 82%)',
@@ -1115,7 +1254,21 @@ export default function InterviewsPage() {
             </div>
           ) : filtered.length === 0 ? (
             <div style={{ padding: '28px', textAlign: 'center', color: 'hsl(210 10% 48%)', fontSize: 13 }}>
-              No {filter === 'ALL' ? '' : `${filter.replace(/_/g, ' ').toLowerCase()} `}interviews yet. Start one above to see it here.
+              <p style={{ margin: '0 0 14px' }}>
+                No {filter === 'ALL' ? '' : `${filter.replace(/_/g, ' ').toLowerCase()} `}interviews yet.
+              </p>
+              <button
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                  padding: '10px 18px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                  fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 700,
+                  background: 'linear-gradient(135deg, hsl(176 40% 45%), hsl(174 85% 60%))',
+                  color: 'hsl(220 15% 5%)',
+                }}
+              >
+                <Play size={14} fill="hsl(220 15% 5%)" /> Start a New Interview
+              </button>
             </div>
           ) : filtered.map((s) => (
             <motion.div

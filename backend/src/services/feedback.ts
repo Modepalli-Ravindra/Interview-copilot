@@ -15,6 +15,7 @@
 
 import { createGatewaySession, sendGatewayMessage } from './aiGateway';
 import type { CodingInterviewReport } from './codingTypes';
+import type { VoiceMetrics } from './voiceTypes';
 
 export type FeedbackSource = 'ai' | 'fallback' | 'mock';
 
@@ -77,6 +78,8 @@ export interface FeedbackReport {
   feedbackSource: FeedbackSource;
   /** Server-computed coding-interview metrics + per-question report (Phase 5). */
   codingInterview?: CodingInterviewReport | null;
+  /** Server-computed voice-interview metrics (Phase 6). Null when unused. */
+  voice?: VoiceMetrics | null;
   provider?: string | null;
   model?: string | null;
   gateway?: string | null;
@@ -121,6 +124,8 @@ export interface FeedbackInput {
   coding?: CodingContext | null;
   /** Server-computed coding-interview report (Phase 5). Numbers here are truth. */
   codingInterview?: CodingInterviewReport | null;
+  /** Server-computed voice-interview metrics (Phase 6). Numbers here are truth. */
+  voice?: VoiceMetrics | null;
 }
 
 const HR_DIMENSIONS = [
@@ -593,6 +598,7 @@ function deriveFromTranscript(
     gateway: null,
     fallbackReason: meta.reason,
     generatedAt: new Date().toISOString(),
+    voice: input.voice ?? null,
   }, input.codingInterview);
 }
 
@@ -692,6 +698,29 @@ function codingInterviewBlock(r?: CodingInterviewReport | null): string[] {
     );
   }
   lines.push('</coding_interview>');
+  return lines;
+}
+
+/**
+ * Voice-interview metrics block for the feedback prompt (Phase 6).
+ * Numbers are server-derived; the model must use them exactly or leave them
+ * out. Dimensions without data are reported as "unavailable".
+ */
+function voicePromptBlock(v?: VoiceMetrics | null): string[] {
+  if (!v) return [];
+  const fmt = (ms: number | null): string =>
+    ms == null ? 'unavailable' : `${Math.round(ms / 1000)}s`;
+  const lines: string[] = [
+    '',
+    '<voice_interview>',
+    `Voice mode: ${v.voiceMode}; voice enabled: ${v.voiceEnabled}.`,
+    `Questions asked: ${v.totalVoiceQuestions}; answers given: ${v.answeredQuestions}.`,
+    `Average answer duration: ${fmt(v.averageAnswerDurationMs)}; total speaking time: ${fmt(v.totalSpeakingTimeMs)}.`,
+    `Interruptions: ${v.interruptionCount}; spoken answers: ${v.speechTurnCount}; session duration: ${fmt(v.voiceSessionDurationMs)}.`,
+    'Use these numbers exactly as given. Where a value is "unavailable" or a count is 0, do NOT invent a number.',
+    'Do not infer personality, honesty, or emotion from voice. Base every qualitative claim on the transcript wording only.',
+    '</voice_interview>',
+  ];
   return lines;
 }
 
@@ -835,6 +864,7 @@ export async function generateFeedback(input: FeedbackInput): Promise<{ report: 
     ...contextBlock(input),
     ...codingBlock(input.coding),
     ...codingInterviewBlock(input.codingInterview),
+    ...voicePromptBlock(input.voice),
     ``,
     `<session_transcript>`,
     transcriptBlock,
@@ -877,6 +907,7 @@ export async function generateFeedback(input: FeedbackInput): Promise<{ report: 
     report.model = completion.model ?? null;
     report.gateway = session.provider ?? null;
     report.codingInterview = input.codingInterview ?? null;
+    report.voice = input.voice ?? null;
     return { report: attachContext(report), fromMock: false };
   } catch (err) {
     console.warn('[Feedback] AI generation failed, using derived report:', (err as Error).message);

@@ -69,6 +69,20 @@ alter table sessions add column if not exists github_analysis      text not null
 alter table sessions add column if not exists github_analyzed_at   timestamptz;
 
 
+-- Phase 7: Custom JWT Authentication
+create table if not exists users (
+  id            uuid primary key,
+  email         text unique not null,
+  password_hash text not null,
+  name          text not null,
+  created_at    timestamptz not null default now()
+);
+
+alter table sessions add column if not exists user_id uuid;
+
+-- Phase 6: voice interview metadata (mode, enabled, state-machine + metrics).
+alter table sessions add column if not exists voice jsonb;
+
 -- Single-user app: the backend connects with the owner/service-role
 -- credential, so RLS is not enforced on that connection. If you later
 -- add Supabase Auth, create an RLS policy on the anon/authenticated role.

@@ -695,9 +695,9 @@ async function main() {
     };
 
     const pgRow = pgToRow(sample);
-    check('pg toRow appends project columns at end', pgRow.length === 32 && pgRow[28].fullName === 'acme/app' && pgRow[29][0].path === 'src/server.ts' && pgRow[30] === sample.githubAnalysis && pgRow[31] === '2026-01-15T10:00:00Z', `len=${pgRow.length}`);
+    check('pg toRow appends project columns at end', pgRow.length === 34 && pgRow[28].fullName === 'acme/app' && pgRow[29][0].path === 'src/server.ts' && pgRow[30] === sample.githubAnalysis && pgRow[31] === '2026-01-15T10:00:00Z' && pgRow[32] === null && pgRow[33] === null, `len=${pgRow.length}`);
     const pgBack = pgFromRow({
-      ...Object.fromEntries(['id', 'mode', 'role', 'company', 'candidate_id', 'resume_text', 'jd_text', 'github_summary', 'difficulty', 'skills', 'resume_profile', 'jd_profile', 'resume_profile_data', 'jd_profile_data', 'match_report', 'coding', 'coding_interview', 'resume_file_key', 'resume_file_url', 'resume_file_name', 'status', 'created_at', 'started_at', 'score', 'duration_ms', 'feedback', 'roadmap', 'transcript', 'project_profile_data', 'project_index', 'github_analysis', 'github_analyzed_at'].map((c, i) => [c, pgRow[i]])),
+      ...Object.fromEntries(['id', 'mode', 'role', 'company', 'candidate_id', 'resume_text', 'jd_text', 'github_summary', 'difficulty', 'skills', 'resume_profile', 'jd_profile', 'resume_profile_data', 'jd_profile_data', 'match_report', 'coding', 'coding_interview', 'resume_file_key', 'resume_file_url', 'resume_file_name', 'status', 'created_at', 'started_at', 'score', 'duration_ms', 'feedback', 'roadmap', 'transcript', 'project_profile_data', 'project_index', 'github_analysis', 'github_analyzed_at', 'user_id', 'voice'].map((c, i) => [c, pgRow[i]])),
     });
     check('pg round-trips project fields', pgBack.projectProfileData.fullName === 'acme/app' && pgBack.projectIndex[0].path === 'src/server.ts' && pgBack.githubAnalysis === sample.githubAnalysis && pgBack.githubAnalyzedAt === new Date('2026-01-15T10:00:00Z').toISOString());
 

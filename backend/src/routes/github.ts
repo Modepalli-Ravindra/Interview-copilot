@@ -160,6 +160,14 @@ function pickTopFiles(paths: string[], count: number): string[] {
 }
 
 // ──────────────────────────────────────────────────────────────
+// GET /api/github/analyze — intercept accidental GET requests (e.g. browser navigation)
+// so they don't fall through to the /:username profile lookup and return confusing data.
+// ──────────────────────────────────────────────────────────────
+router.get('/analyze', (req: Request, res: Response) => {
+  res.status(405).json({ success: false, error: 'Method Not Allowed. Use POST for analysis.' });
+});
+
+// ──────────────────────────────────────────────────────────────
 // GET /api/github/:username — real public GitHub profile lookup (no key needed)
 // ──────────────────────────────────────────────────────────────
 router.get('/:username', async (req: Request, res: Response) => {

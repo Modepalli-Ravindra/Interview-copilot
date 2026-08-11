@@ -1,18 +1,18 @@
 import { Namespace, Socket } from 'socket.io';
+import jwt from 'jsonwebtoken';
 import { getSessionRecord, updateSessionRecord } from '../routes/sessions';
+import { getJwtSecret } from '../services/jwtSecret';
 import { gatewayStatus, abortGatewaySession } from '../services/aiGateway';
-import { generateFeedback } from '../services/feedback';
-import { generateRoadmap } from '../services/roadmap';
-import { summarizeMatchReport } from '../services/matchEngine';
+import { startInterview, handleInterviewAnswer, deeperFollowUp, type InterviewState } from '../services/interviewEngine';
 import {
-  createInterviewState,
-  startInterview,
-  handleInterviewAnswer,
-  type InterviewState,
-  type InterviewMode,
-} from '../services/interviewEngine';
+  getInterviewState,
+  setInterviewState,
+  createInterviewStateForSession,
+} from '../services/interviewSessionRegistry';
+import { finalizeInterview } from '../services/interviewFinalizer';
+import { createDefaultVoiceMeta, type VoiceSessionMeta } from '../services/voiceTypes';
+import { isSemanticDuplicate } from '../services/questionDedup';
 
-const interviewStates = new Map<string, InterviewState>();
 const socketSessions = new Map<string, string>(); // socketId -> sessionId
 const busySessions = new Set<string>();
 const connectionsByIp = new Map<string, number>(); // ip -> active sockets
@@ -22,11 +22,20 @@ const MAX_CONNECTIONS_PER_IP = 5;
 const MIN_TURN_INTERVAL_MS = 1200;
 
 function socketTokenOk(socket: Socket): boolean {
-  if (process.env.AUTH_ENABLED !== 'true') return true;
-  const expected = process.env.AUTH_TOKEN;
-  if (!expected) return false;
+  // Offline smoke-test mode — synthetic identity, mirroring the REST layer.
+  if (process.env.AUTH_TEST_MODE === 'true') {
+    socket.data.user = { userId: 'test-user', email: 'test@example.com', name: 'Test User' };
+    return true;
+  }
   const token = (socket.handshake.auth && socket.handshake.auth.token) || '';
-  return token === expected;
+  if (!token) return false;
+  try {
+    const decoded = jwt.verify(token, getJwtSecret()) as { userId?: string; email?: string; name?: string };
+    socket.data.user = { userId: decoded.userId, email: decoded.email, name: decoded.name };
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function emitTranscript(namespace: Namespace, sessionId: string, sender: string, text: string) {
@@ -38,58 +47,47 @@ function emitTranscript(namespace: Namespace, sessionId: string, sender: string,
   });
 }
 
-/** Generate the feedback report + roadmap, persist them, and emit session_ended. */
-async function finalizeSession(namespace: Namespace, sessionId: string, state: InterviewState) {
-  state.completed = true;
-  const session = getSessionRecord(sessionId);
-  if (!session) return;
+/** Voice metadata helper — load (with defaults) from the session record. */
+function voiceOf(session: Record<string, any> | undefined): VoiceSessionMeta {
+  return { ...createDefaultVoiceMeta(), ...(session?.voice || {}) };
+}
 
-  try {
-    const { report } = await generateFeedback({
-      role: state.role,
-      company: state.company,
-      mode: state.mode,
-      difficulty: state.difficulty,
-      transcript: state.transcript,
-      analysis: state.analysis,
-      resumeProfile: session?.resumeProfile ?? state.resumeProfile ?? null,
-      jdProfile: session?.jdProfile ?? state.jdProfile ?? null,
-      skills: session?.skills ?? state.skills ?? null,
-      matchSummary: session?.matchReport ? summarizeMatchReport(session.matchReport) : (state.matchSummary ?? null),
-      githubAnalysis: session?.githubSummary ?? state.githubSummary ?? null,
-      coding: session?.coding ?? null,
-    });
-
-    let roadmap = session.roadmap || null;
-    if (!roadmap) {
-      try {
-        const res = await generateRoadmap({
-          role: state.role,
-          company: state.company,
-          mode: state.mode,
-          focusAreas: report.nextTopics.length ? report.nextTopics : state.analysis?.focusAreas,
-          strengths: report.strengths.length ? report.strengths : state.analysis?.strengths,
-        });
-        roadmap = res.roadmap;
-      } catch {
-        roadmap = null;
-      }
-    }
-
-    const durationMs = session.durationMs ?? 0;
-    updateSessionRecord(sessionId, {
-      status: 'COMPLETED',
-      score: report.score,
-      feedback: report,
-      roadmap,
-      durationMs,
-    });
-  } catch (err) {
-    console.error('[WS:interview] finalize failed:', (err as Error).message);
-    updateSessionRecord(sessionId, { status: 'COMPLETED' });
-  } finally {
-    namespace.to(`session:${sessionId}`).emit('session_ended', { sessionId });
+/**
+ * Last-resort guard against repeated questions. The live engine already
+ * instructs the model to avoid repeating asked questions; if it still echoes
+ * an earlier interviewer/teaching line (verbatim or trivially reworded), swap
+ * in a generic deeper follow-up so the candidate never hears the same
+ * question twice.
+ */
+function guardAgainstRepeat<T extends { sender: 'interviewer' | 'teaching'; text: string }>(
+  state: InterviewState,
+  turn: T,
+): T {
+  const earlier = state.transcript.filter(
+    (m) => (m.sender === 'interviewer' || m.sender === 'teaching') && m.text !== turn.text,
+  );
+  if (earlier.some((m) => isSemanticDuplicate(turn.text, m.text))) {
+    return {
+      ...turn,
+      sender: 'interviewer' as const,
+      text: deeperFollowUp(earlier.map((m) => m.text)),
+    };
   }
+  return turn;
+}
+
+/**
+ * Generate the feedback report + roadmap, persist them, and emit session_ended.
+ * Delegates the actual generation to the shared finalizer so the Socket.IO
+ * path and the REST voice path produce identical results.
+ */
+async function finalizeSession(namespace: Namespace, sessionId: string, state: InterviewState) {
+  const finalized = await finalizeInterview(sessionId, state);
+  namespace.to(`session:${sessionId}`).emit('session_ended', {
+    sessionId,
+    score: finalized.score,
+    hasReport: Boolean(finalized.report),
+  });
 }
 
 export function registerInterviewHandlers(namespace: Namespace) {
@@ -114,10 +112,21 @@ export function registerInterviewHandlers(namespace: Namespace) {
 
     // ── join_session ─────────────────────────────────────
     socket.on('join_session', async ({ sessionId }: { sessionId: string }) => {
+      const record = getSessionRecord(sessionId);
+      if (!record) {
+        socket.emit('error', { message: 'Session not found' });
+        return;
+      }
+      // Legacy sessions (no userId) stay reachable by any authenticated user;
+      // owned sessions are restricted to their owner.
+      if (record.userId && record.userId !== socket.data.user?.userId) {
+        socket.emit('error', { message: 'Unauthorized: not your session' });
+        return;
+      }
       socket.join(`session:${sessionId}`);
       socketSessions.set(socket.id, sessionId);
 
-      const existing = interviewStates.get(sessionId);
+      const existing = getInterviewState(sessionId);
       if (existing) {
         socket.emit('session_joined', {
           sessionId,
@@ -133,23 +142,7 @@ export function registerInterviewHandlers(namespace: Namespace) {
         return;
       }
 
-      const record = getSessionRecord(sessionId);
-      const state = await createInterviewState({
-        sessionId,
-        mode: (record?.mode || 'TECHNICAL') as InterviewMode,
-        role: record?.role || 'Software Engineer',
-        company: record?.company || 'Company',
-        resumeText: record?.resumeText || '',
-        jdText: record?.jdText || '',
-        githubSummary: record?.githubSummary || '',
-        projectProfile: record?.projectProfileData ? JSON.stringify(record.projectProfileData) : undefined,
-        skills: record?.skills || undefined,
-        resumeProfile: record?.resumeProfile || undefined,
-        jdProfile: record?.jdProfile || undefined,
-        matchSummary: record?.matchReport ? summarizeMatchReport(record.matchReport) : undefined,
-        difficulty: (record?.difficulty as InterviewState['difficulty']) || undefined,
-      });
-      interviewStates.set(sessionId, state);
+      const state = await createInterviewStateForSession(sessionId);
       updateSessionRecord(sessionId, { status: 'ACTIVE', startedAt: new Date().toISOString() });
 
       socket.emit('session_joined', {
@@ -179,9 +172,21 @@ export function registerInterviewHandlers(namespace: Namespace) {
     });
 
     // ── text_message ──────────────────────────────────────
-    // Real-time voice STT from the client arrives here as text.
-    socket.on('text_message', async ({ sessionId, text }: { sessionId: string; text: string }) => {
-      const state = interviewStates.get(sessionId);
+    // Real-time voice STT from the client arrives here as text. Optional
+    // `meta` carries browser-measured answer timings (voice mode only);
+    // the backend clamps + accumulates them into the persisted voice record.
+    socket.on('text_message', async ({ sessionId: clientSessionId, text, meta }: { sessionId: string; text: string; meta?: { answerDurationMs?: number; mode?: string } }) => {
+      // Session authority = the session this socket actually joined. `join_session`
+      // already verified ownership, so a client-supplied sessionId that does not
+      // match the joined session is ignored — a socket can never touch another
+      // user's session via this event.
+      const sessionId = socketSessions.get(socket.id);
+      if (!sessionId || (clientSessionId && clientSessionId !== sessionId)) return;
+      const record = getSessionRecord(sessionId);
+      if (!record) return;
+      if (record.userId && record.userId !== socket.data.user?.userId) return;
+
+      const state = getInterviewState(sessionId);
       if (!state || busySessions.has(sessionId)) return;
       if (state.completed) return;
       if (!text || !text.trim()) return;
@@ -197,10 +202,29 @@ export function registerInterviewHandlers(namespace: Namespace) {
       emitTranscript(namespace, sessionId, 'candidate', text.trim());
 
       try {
+        // Persist voice timings (clamped server-side) before the turn runs.
+        if (meta) {
+          const session = getSessionRecord(sessionId);
+          const voice = voiceOf(session);
+          const isVoice = meta.mode === 'voice';
+          if (isVoice) {
+            const raw = typeof meta.answerDurationMs === 'number' && Number.isFinite(meta.answerDurationMs)
+              ? Math.max(0, Math.min(Math.round(meta.answerDurationMs), 10 * 60 * 1000))
+              : 0;
+            voice.speechTurns += 1;
+            voice.answerCount += 1;
+            voice.totalAnswerDurationMs += raw;
+            voice.enabled = true;
+            if (!voice.startedAt) voice.startedAt = new Date().toISOString();
+          }
+          updateSessionRecord(sessionId, { voice });
+        }
+
         const result = await handleInterviewAnswer(state, text.trim());
-        emitTranscript(namespace, sessionId, result.sender, result.text);
+        const guarded = guardAgainstRepeat(state, result);
+        emitTranscript(namespace, sessionId, guarded.sender, guarded.text);
         updateSessionRecord(sessionId, { transcript: state.transcript });
-        if (result.completed) {
+        if (guarded.completed) {
           const session = getSessionRecord(sessionId);
           if (session?.startedAt) {
             updateSessionRecord(sessionId, {
@@ -227,18 +251,30 @@ export function registerInterviewHandlers(namespace: Namespace) {
     socket.on('barge_in', () => {
       console.log(`[WS:interview] Barge-in from ${socket.id}`);
       const sessionId = socketSessions.get(socket.id);
-      const state = sessionId ? interviewStates.get(sessionId) : undefined;
+      const state = sessionId ? getInterviewState(sessionId) : undefined;
       if (state && !state.gateway.fromMock) {
         abortGatewaySession(state.gateway.gatewaySessionId).catch(() => {});
+      }
+      // Count the interruption server-side (persisted voice metric).
+      if (sessionId) {
+        const session = getSessionRecord(sessionId);
+        const voice = voiceOf(session);
+        voice.interruptions += 1;
+        updateSessionRecord(sessionId, { voice });
       }
       socket.emit('clear_audio_buffer');
     });
 
     // ── end_session ───────────────────────────────────────
-    socket.on('end_session', ({ sessionId }: { sessionId: string }) => {
+    socket.on('end_session', (_payload: { sessionId?: string }) => {
+      // Session authority = the joined session (ownership verified at join).
+      // The client-supplied sessionId is ignored so a socket can only ever end
+      // its own joined session.
+      const sessionId = socketSessions.get(socket.id);
+      if (!sessionId) return;
       console.log(`[WS:interview] Session ended: ${sessionId}`);
       socket.leave(`session:${sessionId}`);
-      const state = interviewStates.get(sessionId);
+      const state = getInterviewState(sessionId);
       if (state && !state.gateway.fromMock) {
         abortGatewaySession(state.gateway.gatewaySessionId).catch(() => {});
       }

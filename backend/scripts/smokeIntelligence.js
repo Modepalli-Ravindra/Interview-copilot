@@ -16,11 +16,16 @@ const fs = require('fs');
 const path = require('path');
 
 // Isolate the smoke test from any configured cloud store: force the local
-// JSON-file store so we never read or write the real Supabase/Postgres DB.
-// (dotenv will not overwrite keys that already exist in process.env.)
+// JSON-file store so we never read or write the real Supabase/Postgres DB or
+// the real Supabase S3 bucket. (dotenv will not overwrite keys that already
+// exist in process.env.)
 process.env.SUPABASE_URL = '';
 process.env.SUPABASE_KEY = '';
 process.env.DATABASE_URL = '';
+process.env.SUPABASE_S3_ENDPOINT = '';
+process.env.SUPABASE_S3_ACCESS_KEY = '';
+process.env.SUPABASE_S3_SECRET_KEY = '';
+process.env.AUTH_TEST_MODE = 'true';
 
 const DATA_FILE = path.resolve(__dirname, '../data/sessions.json');
 

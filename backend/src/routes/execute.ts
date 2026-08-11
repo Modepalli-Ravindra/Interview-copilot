@@ -9,7 +9,7 @@
 
 import { Router, Request, Response } from 'express';
 import 'dotenv/config';
-import { updateSessionRecord } from './sessions';
+import { getOwnedSessionRecord, updateSessionRecord } from './sessions';
 import { loadCodingInterviewState, findQuestion, appendAttempt } from '../services/codingStateManager';
 
 const router = Router();
@@ -164,6 +164,9 @@ router.post('/', async (req: Request, res: Response) => {
     if (typeof coding_interview_session_id !== 'string' || typeof coding_interview_question_id !== 'string') {
       return res.status(400).json({ success: false, error: 'coding_interview_session_id and coding_interview_question_id are required together' });
     }
+    if (!getOwnedSessionRecord(coding_interview_session_id, req.user?.userId)) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
     ciState = loadCodingInterviewState(coding_interview_session_id);
     if (!ciState) {
       return res.status(404).json({ success: false, error: 'No coding interview found for this session' });
@@ -221,6 +224,9 @@ router.post('/', async (req: Request, res: Response) => {
       return res.json({ success: true, data });
     }
     if (session_id) {
+      if (!getOwnedSessionRecord(session_id, req.user?.userId)) {
+        return res.status(404).json({ success: false, error: 'Session not found' });
+      }
       try {
         updateSessionRecord(session_id, {
           coding: {

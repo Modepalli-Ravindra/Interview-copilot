@@ -42,6 +42,8 @@ export function toRow(rec: Record<string, any>) {
     project_index: rec.projectIndex ?? null,
     github_analysis: rec.githubAnalysis ?? '',
     github_analyzed_at: rec.githubAnalyzedAt ?? null,
+    user_id: rec.userId ?? null,
+    voice: rec.voice ?? null,
   };
 }
 
@@ -79,6 +81,8 @@ export function fromRow(row: any): Record<string, any> {
     projectIndex: row.project_index ?? null,
     githubAnalysis: row.github_analysis ?? '',
     githubAnalyzedAt: row.github_analyzed_at ? new Date(row.github_analyzed_at).toISOString() : null,
+    userId: row.user_id ?? null,
+    voice: row.voice ?? null,
   };
 }
 

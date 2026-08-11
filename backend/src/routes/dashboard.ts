@@ -1,12 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { listSessionRecords } from './sessions';
+import { listOwnedSessionRecords } from './sessions';
 import 'dotenv/config';
 
 const router = Router();
 
 // GET /api/dashboard — real aggregate stats derived from stored sessions
-router.get('/', (_req: Request, res: Response) => {
-  const sessions = listSessionRecords()
+router.get('/', (req: Request, res: Response) => {
+  const sessions = listOwnedSessionRecords(req.user?.userId)
     .filter((s) => s.status === 'COMPLETED' || s.status === 'ACTIVE' || s.status === 'SETUP')
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { listSessionRecords } from './sessions';
+import { listOwnedSessionRecords } from './sessions';
 
 const router = Router();
 
@@ -61,8 +61,8 @@ function summarize(candidateId: string, sessions: Record<string, any>[]): Candid
 }
 
 // GET /api/candidates — aggregate sessions into per-candidate pipeline cards
-router.get('/', (_req: Request, res: Response) => {
-  const sessions = listSessionRecords();
+router.get('/', (req: Request, res: Response) => {
+  const sessions = listOwnedSessionRecords(req.user?.userId);
   const byCandidate = new Map<string, Record<string, any>[]>();
   for (const s of sessions) {
     const key = s.candidateId || 'anonymous';
@@ -82,8 +82,8 @@ router.get('/', (_req: Request, res: Response) => {
 
 // GET /api/candidates/:id — every session for one candidate (newest first)
 router.get('/:id', (req: Request, res: Response) => {
-  const sessions = listSessionRecords()
-    .filter((s) => (s.candidateId || 'anonymous') === req.params.id)
+const sessions = listOwnedSessionRecords(req.user?.userId)
+.filter((s) => (s.candidateId || 'anonymous') === req.params.id)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   if (sessions.length === 0) {

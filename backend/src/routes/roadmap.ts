@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getSessionRecord, updateSessionRecord } from './sessions';
+import { getSessionRecord, getOwnedSessionRecord, updateSessionRecord } from './sessions';
 import { generateRoadmap } from '../services/roadmap';
 
 const router = Router();
@@ -13,7 +13,7 @@ router.post('/', async (req: Request, res: Response) => {
 
   let session: Record<string, any> | undefined;
   if (sessionId) {
-    session = getSessionRecord(sessionId);
+    session = getOwnedSessionRecord(sessionId, req.user?.userId);
     if (!session) {
       return res.status(404).json({ success: false, error: 'Session not found' });
     }
@@ -51,7 +51,7 @@ router.post('/', async (req: Request, res: Response) => {
 // PATCH /api/roadmap/:sessionId/steps/:stepId — toggle a step's completion
 // status so the learning timeline stays interactive and durable.
 router.patch('/:sessionId/steps/:stepId', (req: Request, res: Response) => {
-  const session = getSessionRecord(req.params.sessionId);
+  const session = getOwnedSessionRecord(req.params.sessionId, req.user?.userId);
   if (!session) {
     return res.status(404).json({ success: false, error: 'Session not found' });
   }

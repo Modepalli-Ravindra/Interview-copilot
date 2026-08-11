@@ -8,6 +8,15 @@ import { initSessionStore, flushSessionStore } from './routes/sessions';
 // Load environment variables
 dotenv.config();
 
+// Production fail-fast: JWT_SECRET must be a real, strong secret. The dev
+// fallback in services/jwtSecret.ts is for local runs only and must never be
+// relied on when real accounts exist (anyone who knows the fallback value can
+// forge tokens for any user).
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  console.error('[Security] Refusing to start in production: JWT_SECRET must be set.');
+  process.exit(1);
+}
+
 const port = process.env.PORT || 3000;
 const server = http.createServer(app);
 

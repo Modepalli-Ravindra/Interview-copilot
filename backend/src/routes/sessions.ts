@@ -6,6 +6,7 @@ import { parseResumeText, summarizeResumeProfile, sanitizeResumeProfile, type Re
 import { parseJdText, summarizeJdProfile, sanitizeJdProfile, type JdProfile } from '../services/jdParser';
 import { matchResumeToJd, type MatchResult } from '../services/matchEngine';
 import { summarizeProjectProfile, type ProjectProfile } from '../services/repoAnalyzer';
+import { createDefaultVoiceMeta, type VoiceSessionMeta } from '../services/voiceTypes';
 
 const router = Router();
 
@@ -116,6 +117,10 @@ router.post('/', async (req: Request, res: Response) => {
     resumeFileUrl,
     resumeFileName,
     projectProfileData: clientProjectProfileData,
+    voiceMode,
+    voiceEnabled,
+    sttSupported,
+    ttsSupported,
   } = req.body || {};
 
   // Input validation / payload caps
@@ -141,6 +146,12 @@ router.post('/', async (req: Request, res: Response) => {
   }
   if (difficulty && !VALID_DIFFICULTIES.includes(difficulty)) {
     return res.status(400).json({ success: false, error: `difficulty must be one of ${VALID_DIFFICULTIES.join(', ')}` });
+  }
+  if (voiceMode !== undefined && !['voice', 'text'].includes(voiceMode)) {
+    return res.status(400).json({ success: false, error: 'voiceMode must be "voice" or "text"' });
+  }
+  if (voiceEnabled !== undefined && typeof voiceEnabled !== 'boolean') {
+    return res.status(400).json({ success: false, error: 'voiceEnabled must be a boolean' });
   }
   if (mode === 'CODING' && typeof resumeText === 'string' && resumeText.length > 100000) {
     return res.status(413).json({ success: false, error: 'resumeText is too large' });
@@ -230,8 +241,17 @@ router.post('/', async (req: Request, res: Response) => {
       ? requestedCandidateId
       : (candidateEmail ? candidateEmail.toLowerCase() : 'anonymous');
 
+  // Phase 6 — voice interview configuration (persisted, additive).
+  const voice: VoiceSessionMeta = createDefaultVoiceMeta();
+  if (voiceMode === 'voice' || voiceMode === 'text') voice.mode = voiceMode;
+  if (typeof voiceEnabled === 'boolean') voice.enabled = voiceEnabled;
+  if (typeof sttSupported === 'boolean') voice.sttSupported = sttSupported;
+  if (typeof ttsSupported === 'boolean') voice.ttsSupported = ttsSupported;
+  if (voice.enabled) voice.startedAt = new Date().toISOString();
+
   const session = {
     id: sessionId,
+    userId: req.user?.userId ?? null,
     mode: mode || 'CODING',
     difficulty: difficulty || 'Medium',
     role: cap(role, 200) || 'Software Engineer',
@@ -262,6 +282,7 @@ router.post('/', async (req: Request, res: Response) => {
     feedback: null,
     roadmap: null,
     transcript: [],
+    voice,
   };
 
   sessions.set(sessionId, session);
@@ -272,7 +293,7 @@ router.post('/', async (req: Request, res: Response) => {
 
 // GET /api/sessions/:id — get session details
 router.get('/:id', (req: Request, res: Response) => {
-  const session = sessions.get(req.params.id);
+  const session = getOwnedSessionRecord(req.params.id, req.user?.userId);
   if (!session) {
     return res.status(404).json({ success: false, error: 'Session not found' });
   }
@@ -281,7 +302,7 @@ router.get('/:id', (req: Request, res: Response) => {
 
 // GET /api/sessions/:id/feedback — return the feedback report (or 404 if none)
 router.get('/:id/feedback', (req: Request, res: Response) => {
-  const session = sessions.get(req.params.id);
+  const session = getOwnedSessionRecord(req.params.id, req.user?.userId);
   if (!session) {
     return res.status(404).json({ success: false, error: 'Session not found' });
   }
@@ -293,7 +314,7 @@ router.get('/:id/feedback', (req: Request, res: Response) => {
 
 // PATCH /api/sessions/:id/status — update session status
 router.patch('/:id/status', (req: Request, res: Response) => {
-  const session = sessions.get(req.params.id);
+  const session = getOwnedSessionRecord(req.params.id, req.user?.userId);
   if (!session) {
     return res.status(404).json({ success: false, error: 'Session not found' });
   }
@@ -311,8 +332,8 @@ router.patch('/:id/status', (req: Request, res: Response) => {
 });
 
 // GET /api/sessions — list all sessions (newest first)
-router.get('/', (_req: Request, res: Response) => {
-  const all = Array.from(sessions.values()).sort(
+router.get('/', (req: Request, res: Response) => {
+  const all = listOwnedSessionRecords(req.user?.userId).sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
   res.json({ success: true, data: all, count: all.length });
@@ -324,6 +345,26 @@ router.get('/', (_req: Request, res: Response) => {
 
 export function getSessionRecord(id: string): Record<string, any> | undefined {
   return sessions.get(id);
+}
+
+/**
+ * Legacy sessions (no userId) remain visible to any authenticated user for
+ * backwards compatibility; owned sessions are restricted to their owner.
+ */
+export function isOwnedSession(record: Record<string, any> | undefined, userId: unknown): boolean {
+  if (!record) return false;
+  if (!record.userId) return true;
+  return !!userId && record.userId === userId;
+}
+
+export function getOwnedSessionRecord(id: string, userId: unknown): Record<string, any> | undefined {
+  const rec = sessions.get(id);
+  if (!rec || !isOwnedSession(rec, userId)) return undefined;
+  return rec;
+}
+
+export function listOwnedSessionRecords(userId: unknown): Record<string, any>[] {
+  return Array.from(sessions.values()).filter((s) => isOwnedSession(s, userId));
 }
 
 export function updateSessionRecord(id: string, patch: Record<string, any>): Record<string, any> | undefined {

@@ -16,7 +16,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { getSessionRecord } from './sessions';
+import { getSessionRecord, getOwnedSessionRecord } from './sessions';
 import { generateCodingQuestion, type GenerateQuestionInput } from '../services/codingEngine';
 import { getQuestionHistory, addQuestionHistory } from '../services/questionStore';
 import { summarizeMatchReport } from '../services/matchEngine';
@@ -47,6 +47,10 @@ const router = Router();
 const VALID_DIFFICULTIES: CodingDifficulty[] = ['Easy', 'Medium', 'Hard'];
 
 function requireState(req: Request, res: Response): CodingInterviewStateRecord | null {
+  if (!getOwnedSessionRecord(req.params.sessionId, req.user?.userId)) {
+    res.status(404).json({ success: false, error: 'Session not found' });
+    return null;
+  }
   const state = loadCodingInterviewState(req.params.sessionId);
   if (!state) {
     res.status(404).json({ success: false, error: 'No coding interview found for this session' });
@@ -162,7 +166,7 @@ router.post('/start', async (req: Request, res: Response) => {
   if (typeof sessionId !== 'string' || !sessionId.trim()) {
     return res.status(400).json({ success: false, error: 'sessionId is required' });
   }
-  const session = getSessionRecord(sessionId);
+  const session = getOwnedSessionRecord(sessionId, req.user?.userId);
   if (!session) return res.status(404).json({ success: false, error: 'Session not found' });
 
   const startDifficulty = (req.body?.startDifficulty as CodingDifficulty) || undefined;
@@ -192,6 +196,9 @@ router.post('/start', async (req: Request, res: Response) => {
 
 // GET /status/:sessionId — resume-safe status + active question
 router.get('/status/:sessionId', (req: Request, res: Response) => {
+  if (!getOwnedSessionRecord(req.params.sessionId, req.user?.userId)) {
+    return res.status(404).json({ success: false, error: 'Session not found' });
+  }
   const state = loadCodingInterviewState(req.params.sessionId);
   if (!state) {
     return res.json({ success: true, data: { status: null, question: null, active: false } });
@@ -276,7 +283,7 @@ router.post('/:sessionId/complete', (req: Request, res: Response) => {
 
 // POST /:sessionId/next — ask the next adaptive question (force=true skips the active one)
 router.post('/:sessionId/next', async (req: Request, res: Response) => {
-  const session = getSessionRecord(req.params.sessionId);
+  const session = getOwnedSessionRecord(req.params.sessionId, req.user?.userId);
   if (!session) return res.status(404).json({ success: false, error: 'Session not found' });
 
   let state = requireState(req, res);

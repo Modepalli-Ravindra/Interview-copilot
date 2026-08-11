@@ -6,7 +6,11 @@
 #
 # Deploy: push this repo to GitHub, then in the Render Dashboard choose
 #   New -> Blueprint -> your repo -> render.yaml. Render prompts for the
-#   sync:false secrets (SUPABASE_KEY, FRONTEND_URL) on first sync.
+#   sync:false secrets on first sync.
+#
+# SECURITY: never put real secret values in this file. Secret env vars are
+# marked `sync: false` — supply their values through Render's dashboard UI /
+# secret manager after the Blueprint is created.
 #
 # Note: free instances have NO persistent disk — OmniRoute's quota/SQLite
 # state and the backend GitHub cache reset on each deploy/restart (acceptable
@@ -29,19 +33,60 @@ services:
       # ── Server ──────────────────────────────────────────────
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: "3000"
+      # CORS origin for REST + Socket.IO. MUST be the exact deployed frontend
+      # origin (e.g. https://yourapp.vercel.app). Secret only in the sense that
+      # it differs per environment — supply it via the dashboard.
       - key: FRONTEND_URL
-        sync: false # set to the Vercel app URL after Phase 13 (e.g. https://yourapp.vercel.app)
+        sync: false
       # ── Security ────────────────────────────────────────────
-      # OFF until Phase 13 wires the token into the frontend fetch() calls.
-      - key: AUTH_ENABLED
-        value: "false"
-      - key: AUTH_TOKEN
-        generateValue: true
+      # JWT secret for account auth (register/login + all /api routes except
+      # /health + socket handshake). REQUIRED: server.ts refuses to boot in
+      # production without it. Generate with:
+      #   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+      - key: JWT_SECRET
+        sync: false
       # ── Database (Supabase) ─────────────────────────────────
+      # URL + publishable key for the sessions store (Supabase JS client).
+      #   URL: Project Settings -> API -> Project URL
+      #   KEY: Project Settings -> API -> publishable key (sb_publishable_...)
+      # Prereq: run backend/db/schema.sql once in the Supabase SQL editor.
       - key: SUPABASE_URL
-        value: https://qlprqqvkmasowujdefif.supabase.co
+        sync: false
       - key: SUPABASE_KEY
-        sync: false # paste the publishable key (sb_publishable_...)
+        sync: false
+      # Backend-only privileged key for user management (register/login on the
+      # `users` table). Service-role key bypasses RLS so the table can stay
+      # RLS-enabled while the server creates/looks up users. NEVER expose to
+      # the frontend, NEVER put in a VITE_* variable.
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # ── Resume file storage (Supabase S3-compatible, optional) ──
+      # Without these, resume parsing still works but uploaded files are not
+      # persisted (History cannot re-download them). Secrets from
+      #   Project Settings -> Storage -> S3 Access Keys.
+      - key: SUPABASE_S3_ENDPOINT
+        sync: false
+      - key: SUPABASE_S3_ACCESS_KEY
+        sync: false
+      - key: SUPABASE_S3_SECRET_KEY
+        sync: false
+      - key: SUPABASE_S3_REGION
+        value: us-east-1
+      - key: SUPABASE_S3_BUCKET
+        value: resumes
+      - key: SUPABASE_S3_PATH_STYLE
+        value: "true"
+      # ── Code execution (Judge0, optional) ───────────────────
+      # Unset = public https://ce.judge0.com (rate-limited, no key). Only
+      # needed for a self-hosted Judge0 or a RapidAPI-style host.
+      # - key: JUDGE0_URL
+      #   sync: false
+      # - key: JUDGE0_API_KEY
+      #   sync: false
+      # - key: JUDGE0_HOST
+      #   sync: false
       # ── AI provider chain ───────────────────────────────────
       # OmniRoute runs inside this same container; opencode is not deployed.
       - key: AI_PROVIDER_ORDER

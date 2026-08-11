@@ -14,17 +14,22 @@
     "test:phase3": "npm run build && node scripts/smokePhase3.js",
     "test:phase5": "npm run build && node scripts/smokePhase5.js",
     "test:phase5metrics": "npm run build && node scripts/smokePhase5Metrics.js",
-    "test:github": "npm run build && node scripts/testGithubAnalyzer.js"
+    "test:phase6": "npm run build && node scripts/smokePhase6.js",
+    "test:github": "npm run build && node scripts/testGithubAnalyzer.js",
+    "test:auth": "npm run build && node scripts/smokeAuth.js",
+    "test:persistence": "npm run build && node scripts/smokePersistence.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",
     "@supabase/supabase-js": "^2.112.2",
     "@types/uuid": "^10.0.0",
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^8.6.2",
     "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
     "pdf-parse": "^1.1.4",
     "pg": "^8.22.0",
@@ -32,8 +37,10 @@
     "uuid": "^14.0.1"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.2.0",
     "@types/node": "^20.11.30",
     "@types/pdf-parse": "^1.1.5",

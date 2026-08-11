@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import 'dotenv/config';
 import { authMiddleware } from './middleware/auth';
+import authRouter from './routes/auth';
 import healthRouter from './routes/health';
 import sessionsRouter from './routes/sessions';
 import analysisRouter from './routes/analysis';
@@ -16,6 +17,7 @@ import intelligenceRouter from './routes/intelligence';
 import candidatesRouter from './routes/candidates';
 import codingRouter from './routes/coding';
 import codingInterviewRouter from './routes/codingInterview';
+import voiceRouter from './routes/voice';
 
 const app = express();
 
@@ -48,13 +50,16 @@ const apiLimiter = rateLimit({
   message: { success: false, error: 'Too many requests, please slow down.' },
 });
 
-// Auth gate for all /api routes (health stays open for uptime probes).
+// Auth gate for all /api routes (health and auth stay open).
 app.use('/api', (req, _res, next) => {
-  if (req.path.startsWith('/health')) return next();
+  if (req.path.startsWith('/health') || req.path.startsWith('/auth/register') || req.path.startsWith('/auth/login')) {
+    return next();
+  }
   authMiddleware(req, _res, next);
 });
 
 // Route mounting
+app.use('/api/auth',     apiLimiter, authRouter);
 app.use('/api/health',   healthRouter);
 app.use('/api/sessions', apiLimiter, sessionsRouter);
 app.use('/api/analysis', apiLimiter, analysisRouter);
@@ -67,6 +72,7 @@ app.use('/api/intelligence', apiLimiter, intelligenceRouter);
 app.use('/api/candidates', apiLimiter, candidatesRouter);
 app.use('/api/coding',   apiLimiter, codingRouter);
 app.use('/api/coding-interview', apiLimiter, codingInterviewRouter);
+app.use('/api/voice',            apiLimiter, voiceRouter);
 
 // Standard Error Fallback Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

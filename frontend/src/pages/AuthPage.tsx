@@ -1,249 +1,277 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
-import { Mic, Mail, Lock, User, Eye, EyeOff, ArrowLeft, Loader2 } from 'lucide-react';
-
-type Mode = 'login' | 'register';
+import React, { useState } from 'react';
+import { useNavigate, Navigate } from 'react-router-dom';
+import { apiFetch } from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
+import { Bot, Mail, Lock, User, ArrowRight } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 export default function AuthPage() {
-  const navigate = useNavigate();
-  const [mode, setMode] = useState<Mode>('login');
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '' });
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [name, setName] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  
+  const { login, user } = useAuth();
+  const navigate = useNavigate();
+
+  // If already logged in, redirect to dashboard
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  const validatePassword = (pwd: string) => {
+    if (pwd.length < 8) return "Password must be at least 8 characters long";
+    if (!/[a-zA-Z]/.test(pwd)) return "Password must contain at least one letter";
+    if (!/[!@#$%^&*(),.?":{}|<>\-_]/.test(pwd)) return "Password must contain at least one special character";
+    return null;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-    // Simulate API call — replace with real auth endpoint
-    await new Promise(r => setTimeout(r, 1200));
-    setLoading(false);
-    navigate('/dashboard');
-  };
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '12px 14px 12px 42px',
-    background: 'hsl(215 15% 8%)',
-    border: '1px solid hsl(215 15% 20%)',
-    borderRadius: 10, color: 'hsl(210 10% 88%)',
-    fontSize: 14, fontFamily: 'var(--font-sans)',
-    outline: 'none', transition: 'border-color 0.2s',
+    if (!isLogin) {
+      if (password !== confirmPassword) {
+        setError('Passwords do not match');
+        setLoading(false);
+        return;
+      }
+      const pwdError = validatePassword(password);
+      if (pwdError) {
+        setError(pwdError);
+        setLoading(false);
+        return;
+      }
+    }
+
+    try {
+      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+      const body = isLogin ? { email, password } : { email, password, name };
+      
+      const res = await apiFetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      
+      const data = await res.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Authentication failed');
+      }
+
+      login(data.token, data.user);
+      navigate('/dashboard');
+    } catch (err: any) {
+      setError(err.message || 'An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div style={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center',
-      justifyContent: 'center', background: 'hsl(220 15% 5%)',
-      padding: '24px', position: 'relative', overflow: 'hidden',
+      minHeight: '100vh',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'radial-gradient(circle at top right, hsl(215 20% 12%), hsl(220 20% 4%))',
+      fontFamily: 'var(--font-sans)',
+      color: 'white',
+      padding: 24,
     }}>
-      {/* Gradient orbs */}
-      <div style={{
-        position: 'absolute', top: '15%', left: '10%',
-        width: 400, height: 400, borderRadius: '50%',
-        background: 'radial-gradient(circle, hsl(176 40% 35% / 0.2) 0%, transparent 70%)',
-        filter: 'blur(50px)', pointerEvents: 'none',
-      }} />
-      <div style={{
-        position: 'absolute', bottom: '10%', right: '10%',
-        width: 350, height: 350, borderRadius: '50%',
-        background: 'radial-gradient(circle, hsl(215 80% 45% / 0.15) 0%, transparent 70%)',
-        filter: 'blur(50px)', pointerEvents: 'none',
-      }} />
-
-      <motion.div
-        initial={{ opacity: 0, y: 24, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.4, ease: 'easeOut' }}
-        className="glass"
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
         style={{
           width: '100%', maxWidth: 440,
-          borderRadius: 20, padding: '40px 40px',
-          position: 'relative', zIndex: 1,
+          background: 'hsl(215 15% 8%)',
+          borderRadius: 24,
+          border: '1px solid hsl(215 15% 15%)',
+          padding: 40,
+          boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
         }}
       >
-        {/* Back button */}
-        <button
-          onClick={() => navigate('/')}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: 'hsl(210 10% 55%)', fontSize: 13,
-            fontFamily: 'var(--font-sans)', marginBottom: 28,
-            padding: 0, transition: 'color 0.2s',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.color = 'hsl(174 85% 70%)')}
-          onMouseLeave={e => (e.currentTarget.style.color = 'hsl(210 10% 55%)')}
-        >
-          <ArrowLeft size={15} /> Back to Home
-        </button>
-
-        {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 32 }}>
           <div style={{
-            width: 40, height: 40, borderRadius: 12,
-            background: 'linear-gradient(135deg, hsl(176 40% 45%), hsl(174 85% 70%))',
+            width: 48, height: 48, borderRadius: 12,
+            background: 'linear-gradient(135deg, hsl(174 85% 65%), hsl(142 70% 50%))',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
+            marginBottom: 16,
+            boxShadow: '0 4px 12px hsl(174 85% 65% / 0.3)'
           }}>
-            <Mic size={20} color="hsl(220 15% 5%)" />
+            <Bot size={24} color="black" />
           </div>
-          <span style={{ fontWeight: 700, fontSize: 18, color: 'hsl(210 10% 92%)', letterSpacing: '-0.02em' }}>
-            InterviewPilot <span style={{ color: 'hsl(174 85% 70%)' }}>AI</span>
-          </span>
+          <h1 style={{ fontSize: 24, fontWeight: 700, margin: '0 0 8px 0' }}>
+            {isLogin ? 'Welcome back' : 'Create an account'}
+          </h1>
+          <p style={{ color: 'hsl(210 10% 60%)', fontSize: 14, margin: 0 }}>
+            {isLogin ? 'Sign in to continue to InterviewPilot' : 'Get started with AI-powered mock interviews'}
+          </p>
         </div>
 
-        {/* Mode toggle */}
-        <div style={{
-          display: 'flex', gap: 0,
-          background: 'hsl(215 15% 8%)',
-          borderRadius: 10, padding: 4, marginBottom: 28,
-          border: '1px solid hsl(215 15% 18%)',
-        }}>
-          {(['login', 'register'] as Mode[]).map(m => (
-            <button
-              key={m}
-              onClick={() => { setMode(m); setError(''); }}
-              style={{
-                flex: 1, padding: '9px 0', borderRadius: 8,
-                border: 'none', cursor: 'pointer',
-                fontFamily: 'var(--font-sans)', fontSize: 14, fontWeight: 500,
-                transition: 'all 0.2s',
-                background: mode === m
-                  ? 'linear-gradient(135deg, hsl(176 40% 45%), hsl(174 85% 55%))'
-                  : 'transparent',
-                color: mode === m ? 'hsl(220 15% 5%)' : 'hsl(210 10% 55%)',
-              }}
-            >
-              {m === 'login' ? 'Sign In' : 'Create Account'}
-            </button>
-          ))}
-        </div>
+        {error && (
+          <div style={{
+            background: 'hsl(0 70% 50% / 0.1)',
+            border: '1px solid hsl(0 70% 50% / 0.2)',
+            color: 'hsl(0 100% 75%)',
+            padding: 12, borderRadius: 8,
+            fontSize: 14, marginBottom: 20,
+          }}>
+            {error}
+          </div>
+        )}
 
-        <form onSubmit={handleSubmit}>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={mode}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2 }}
-              style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
-            >
-              {mode === 'register' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  {[
-                    { key: 'firstName', placeholder: 'First name' },
-                    { key: 'lastName',  placeholder: 'Last name'  },
-                  ].map(({ key, placeholder }) => (
-                    <div key={key} style={{ position: 'relative' }}>
-                      <User size={16} color="hsl(210 10% 45%)" style={{
-                        position: 'absolute', left: 14, top: '50%',
-                        transform: 'translateY(-50%)',
-                      }} />
-                      <input
-                        type="text"
-                        placeholder={placeholder}
-                        value={(form as any)[key]}
-                        onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                        style={inputStyle}
-                        onFocus={e => (e.target.style.borderColor = 'hsl(176 40% 45%)')}
-                        onBlur={e => (e.target.style.borderColor = 'hsl(215 15% 20%)')}
-                        required
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Email */}
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {!isLogin && (
+            <div>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'hsl(210 10% 70%)', marginBottom: 6 }}>
+                Full Name
+              </label>
               <div style={{ position: 'relative' }}>
-                <Mail size={16} color="hsl(210 10% 45%)" style={{
-                  position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)',
-                }} />
+                <User size={18} color="hsl(210 10% 40%)" style={{ position: 'absolute', left: 12, top: 11 }} />
                 <input
-                  type="email"
-                  placeholder="Email address"
-                  value={form.email}
-                  onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                  style={inputStyle}
-                  onFocus={e => (e.target.style.borderColor = 'hsl(176 40% 45%)')}
-                  onBlur={e => (e.target.style.borderColor = 'hsl(215 15% 20%)')}
+                  type="text"
                   required
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder="John Doe"
+                  style={{
+                    width: '100%', padding: '10px 12px 10px 40px',
+                    background: 'hsl(215 15% 5%)',
+                    border: '1px solid hsl(215 15% 18%)',
+                    borderRadius: 8, color: 'white',
+                    fontSize: 15, outline: 'none',
+                    transition: 'border-color 0.2s'
+                  }}
+                  onFocus={e => e.target.style.borderColor = 'hsl(174 85% 65%)'}
+                  onBlur={e => e.target.style.borderColor = 'hsl(215 15% 18%)'}
                 />
               </div>
+            </div>
+          )}
 
-              {/* Password */}
-              <div style={{ position: 'relative' }}>
-                <Lock size={16} color="hsl(210 10% 45%)" style={{
-                  position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)',
-                }} />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Password"
-                  value={form.password}
-                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                  style={{ ...inputStyle, paddingRight: 42 }}
-                  onFocus={e => (e.target.style.borderColor = 'hsl(176 40% 45%)')}
-                  onBlur={e => (e.target.style.borderColor = 'hsl(215 15% 20%)')}
-                  required minLength={8}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(s => !s)}
-                  style={{
-                    position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-                    background: 'none', border: 'none', cursor: 'pointer', padding: 2,
-                  }}
-                >
-                  {showPassword
-                    ? <EyeOff size={16} color="hsl(210 10% 45%)" />
-                    : <Eye size={16} color="hsl(210 10% 45%)" />}
-                </button>
-              </div>
-
-              {error && (
-                <motion.p
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  style={{
-                    fontSize: 13, color: 'hsl(0 85% 65%)',
-                    background: 'hsl(0 85% 60% / 0.1)',
-                    border: '1px solid hsl(0 85% 60% / 0.3)',
-                    borderRadius: 8, padding: '8px 12px',
-                  }}
-                >
-                  {error}
-                </motion.p>
-              )}
-
-              <motion.button
-                type="submit"
-                disabled={loading}
-                whileHover={{ scale: loading ? 1 : 1.02 }}
-                whileTap={{ scale: loading ? 1 : 0.98 }}
+          <div>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'hsl(210 10% 70%)', marginBottom: 6 }}>
+              Email Address
+            </label>
+            <div style={{ position: 'relative' }}>
+              <Mail size={18} color="hsl(210 10% 40%)" style={{ position: 'absolute', left: 12, top: 11 }} />
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="you@example.com"
                 style={{
-                  width: '100%', padding: '13px',
-                  borderRadius: 10, border: 'none',
-                  background: loading
-                    ? 'hsl(176 40% 35%)'
-                    : 'linear-gradient(135deg, hsl(176 40% 45%), hsl(174 85% 55%))',
-                  color: 'hsl(220 15% 5%)',
-                  cursor: loading ? 'wait' : 'pointer',
-                  fontSize: 15, fontWeight: 700,
-                  fontFamily: 'var(--font-sans)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  marginTop: 4, transition: 'background 0.3s',
-                  boxShadow: '0 4px 16px hsl(176 40% 45% / 0.35)',
+                  width: '100%', padding: '10px 12px 10px 40px',
+                  background: 'hsl(215 15% 5%)',
+                  border: '1px solid hsl(215 15% 18%)',
+                  borderRadius: 8, color: 'white',
+                  fontSize: 15, outline: 'none',
+                  transition: 'border-color 0.2s'
                 }}
-              >
-                {loading ? (
-                  <><Loader2 size={17} style={{ animation: 'spin 0.8s linear infinite' }} /> Processing...</>
-                ) : mode === 'login' ? 'Sign In to InterviewPilot' : 'Create My Account'}
-              </motion.button>
-            </motion.div>
-          </AnimatePresence>
+                onFocus={e => e.target.style.borderColor = 'hsl(174 85% 65%)'}
+                onBlur={e => e.target.style.borderColor = 'hsl(215 15% 18%)'}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'hsl(210 10% 70%)', marginBottom: 6 }}>
+              Password
+            </label>
+            <div style={{ position: 'relative' }}>
+              <Lock size={18} color="hsl(210 10% 40%)" style={{ position: 'absolute', left: 12, top: 11 }} />
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
+                style={{
+                  width: '100%', padding: '10px 12px 10px 40px',
+                  background: 'hsl(215 15% 5%)',
+                  border: '1px solid hsl(215 15% 18%)',
+                  borderRadius: 8, color: 'white',
+                  fontSize: 15, outline: 'none',
+                  transition: 'border-color 0.2s'
+                }}
+                onFocus={e => e.target.style.borderColor = 'hsl(174 85% 65%)'}
+                onBlur={e => e.target.style.borderColor = 'hsl(215 15% 18%)'}
+              />
+            </div>
+          </div>
+
+          {!isLogin && (
+            <div>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'hsl(210 10% 70%)', marginBottom: 6 }}>
+                Confirm Password
+              </label>
+              <div style={{ position: 'relative' }}>
+                <Lock size={18} color="hsl(210 10% 40%)" style={{ position: 'absolute', left: 12, top: 11 }} />
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  style={{
+                    width: '100%', padding: '10px 12px 10px 40px',
+                    background: 'hsl(215 15% 5%)',
+                    border: '1px solid hsl(215 15% 18%)',
+                    borderRadius: 8, color: 'white',
+                    fontSize: 15, outline: 'none',
+                    transition: 'border-color 0.2s'
+                  }}
+                  onFocus={e => e.target.style.borderColor = 'hsl(174 85% 65%)'}
+                  onBlur={e => e.target.style.borderColor = 'hsl(215 15% 18%)'}
+                />
+              </div>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              marginTop: 8,
+              width: '100%', padding: '12px',
+              background: 'hsl(174 85% 65%)',
+              color: 'hsl(220 20% 5%)',
+              border: 'none', borderRadius: 8,
+              fontSize: 15, fontWeight: 600,
+              cursor: loading ? 'default' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              opacity: loading ? 0.7 : 1,
+              transition: 'opacity 0.2s'
+            }}
+          >
+            {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
+            {!loading && <ArrowRight size={18} />}
+          </button>
         </form>
+
+        <div style={{ marginTop: 24, textAlign: 'center', fontSize: 14, color: 'hsl(210 10% 60%)' }}>
+          {isLogin ? "Don't have an account? " : "Already have an account? "}
+          <button
+            onClick={() => {
+              setIsLogin(!isLogin);
+              setError('');
+            }}
+            style={{
+              background: 'none', border: 'none',
+              color: 'hsl(174 85% 65%)', fontWeight: 500,
+              cursor: 'pointer', padding: 0
+            }}
+          >
+            {isLogin ? 'Sign up' : 'Log in'}
+          </button>
+        </div>
       </motion.div>
     </div>
   );

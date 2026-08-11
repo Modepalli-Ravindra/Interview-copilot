@@ -12,6 +12,7 @@ import {
   parseInterviewTurn,
   type GatewaySession,
 } from './aiGateway';
+import { isSemanticDuplicate, normalizeQuestion } from './questionDedup';
 
 export type InterviewMode =
   | 'CODING'
@@ -63,6 +64,8 @@ export interface InterviewState extends InterviewContext {
   maxTurns: number;
   completed: boolean;
   analysis: { summary: string; strengths: string[]; focusAreas: string[] } | null;
+  /** Mock-mode cursor: index of the next unused static question. */
+  mockCursor: number;
 }
 
 const MODE_PERSONAS: Record<InterviewMode, string> = {
@@ -298,11 +301,37 @@ function mockStart(state: InterviewState): { analysis: InterviewState['analysis'
     strengths: ['Hands-on project experience', 'Technical fundamentals'],
     focusAreas: ['Trade-off reasoning', 'System design at scale'],
   };
+  // Q0 is emitted as the opening question, so the mock answer cursor starts
+  // after it.
+  state.mockCursor = 1;
   return { analysis, question: MOCK_QUESTIONS[0].question };
 }
 
 function mockAnswer(state: InterviewState, candidateText: string): { sender: 'interviewer' | 'teaching'; text: string } {
-  const q = MOCK_QUESTIONS[Math.min(state.turnCount, MOCK_QUESTIONS.length - 1)];
+  // Each answer consumes exactly one mock question, in order, so the static
+  // pool is never repeated and every question is used at most once. Once the
+  // pool is exhausted the engine rotates deeper follow-ups instead.
+  const asked = state.transcript
+    .filter((m) => m.sender === 'interviewer' || m.sender === 'teaching')
+    .map((m) => m.text);
+
+  let idx = state.mockCursor ?? 0;
+  // Rebuild-safe: if the state was recreated from a persisted transcript the
+  // in-memory cursor is lost, so recover it from the number of answers
+  // already recorded. The current answer's candidate turn is pushed before
+  // this function runs, so `answered - 1` is the count of consumed questions.
+  const answered = state.transcript.filter((m) => m.sender === 'candidate').length;
+  idx = Math.max(idx, Math.min(Math.max(0, answered - 1), MOCK_QUESTIONS.length));
+
+  if (idx >= MOCK_QUESTIONS.length) {
+    return {
+      sender: 'interviewer',
+      text: deeperFollowUp(asked),
+    };
+  }
+
+  const q = MOCK_QUESTIONS[idx];
+  state.mockCursor = idx + 1;
   const text = candidateText.toLowerCase();
   const matched = q.keywords.length > 0 && q.keywords.some((k) => text.includes(k));
   if (matched || q.keywords.length === 0) {
@@ -315,6 +344,24 @@ function mockAnswer(state: InterviewState, candidateText: string): { sender: 'in
     sender: 'teaching',
     text: `Not quite — here's the core concept:\n\n${q.teach}\n\nTip: always name the trade-off you are making and why it wins for this case.`,
   };
+}
+
+/**
+ * Rotating deeper-follow-up pool. Used whenever the interviewer must move
+ * deeper without repeating an existing question (mock pool exhausted, or the
+ * live model echoes an earlier question). Rotation guarantees the fallback
+ * itself is never the exact same sentence twice in a row.
+ */
+const DEEPER_FOLLOW_UPS = [
+  'Interesting — can you go one level deeper on that and walk me through the trade-offs you weighed?',
+  'Let\'s go one level deeper on that — what trade-offs did you consider, and what would you do differently if you built it again?',
+  'Could you walk me through a concrete example of that, including the key decision you made and the alternative you rejected?',
+  'What would happen at 10x the scale or traffic — where does your current approach start to break?',
+];
+
+export function deeperFollowUp(asked: string[]): string {
+  const fallback = DEEPER_FOLLOW_UPS.find((f) => !asked.some((a) => isSemanticDuplicate(f, a)));
+  return fallback || DEEPER_FOLLOW_UPS[0];
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -331,6 +378,7 @@ export async function createInterviewState(ctx: InterviewContext): Promise<Inter
     maxTurns: ctx.maxTurns ?? MAX_TURNS,
     completed: false,
     analysis: null,
+    mockCursor: 0,
   };
 }
 
@@ -348,32 +396,40 @@ export interface StartResult {
 
 /** Send the system prompt + resume context and get the analysis + first question. */
 export async function startInterview(state: InterviewState): Promise<StartResult> {
+  let question: string;
   if (state.gateway.fromMock) {
     const mock = mockStart(state);
     state.analysis = mock.analysis;
+    question = mock.question;
     state.transcript.push({
       sender: 'system',
       text: 'OpenCode gateway unavailable — running in offline practice mode.',
       timestamp: new Date().toISOString(),
     });
-    return mock;
+  } else {
+    const prompt = buildSystemPrompt(state) + [
+      ``,
+      `First turn: analyze the candidate's resume against the role and produce this JSON:`,
+      `{"summary":"<1-2 sentence analysis>","strengths":["<2-3>"],"focusAreas":["<2-3>"],"question":"<your first personalized interview question>"}`,
+    ].join('\n');
+
+    const completion = await sendGatewayMessage(state.gateway.gatewaySessionId, prompt);
+    const parsed = parseStartTurn(completion.text);
+    state.analysis = parsed.analysis;
+    question = parsed.question;
+    state.transcript.push({
+      sender: 'system',
+      text: `Gateway: ${completion.provider} (${completion.latencyMs}ms)`,
+      timestamp: new Date().toISOString(),
+    });
   }
 
-  const prompt = buildSystemPrompt(state) + [
-    ``,
-    `First turn: analyze the candidate's resume against the role and produce this JSON:`,
-    `{"summary":"<1-2 sentence analysis>","strengths":["<2-3>"],"focusAreas":["<2-3>"],"question":"<your first personalized interview question>"}`,
-  ].join('\n');
+  // Persist the opening question on the transcript. The dedup guard and the
+  // feedback generator read interviewer/teaching turns from the transcript,
+  // so the first question must be visible there or the model could repeat it.
+  state.transcript.push({ sender: 'interviewer', text: question, timestamp: new Date().toISOString() });
 
-  const completion = await sendGatewayMessage(state.gateway.gatewaySessionId, prompt);
-  const parsed = parseStartTurn(completion.text);
-  state.analysis = parsed.analysis;
-  state.transcript.push({
-    sender: 'system',
-    text: `Gateway: ${completion.provider} (${completion.latencyMs}ms)`,
-    timestamp: new Date().toISOString(),
-  });
-  return { analysis: parsed.analysis, question: parsed.question };
+  return { analysis: state.analysis, question };
 }
 
 export interface AnswerResult {
@@ -426,10 +482,19 @@ export async function handleInterviewAnswer(state: InterviewState, candidateText
       [...state.transcript]
         .reverse()
         .find((m) => m.sender === 'interviewer' || m.sender === 'teaching')?.text || '';
+    const askedQuestions = state.transcript
+      .filter((m) => m.sender === 'interviewer' || m.sender === 'teaching')
+      .map((m) => m.text.trim())
+      .filter(Boolean)
+      .slice(0, 12);
     const prompt = [
       `<question_asked>`,
       lastQuestion,
       `</question_asked>`,
+      ``,
+      `<questions_already_asked>`,
+      askedQuestions.length ? askedQuestions.join('\n') : '(none)',
+      `</questions_already_asked>`,
       ``,
       `<candidate_answer>`,
       candidateText,
@@ -440,10 +505,23 @@ export async function handleInterviewAnswer(state: InterviewState, candidateText
       `- Weak or wrong answer: send a "teaching" turn — one-sentence concept explanation plus one practical tip — then ask one focused follow-up or move on.`,
       `- Off-topic, vague, or evasive answer: send a "teaching" turn that gently redirects back to the question.`,
       ``,
+      `DEDUP RULE: NEVER repeat a question in <questions_already_asked>, even reworded. Treat trivial rewordings as duplicates (e.g. "Explain your project architecture." and "Walk me through the architecture of your project." are the same). You may revisit a topic, but the wording must ask something genuinely new and more specific.`,
+      ``,
       `Reply with exactly one JSON object, no markdown: {"sender":"interviewer"|"teaching","text":"<max 3 sentences, voice-friendly>"}`,
     ].join('\n');
     const completion = await sendGatewayMessage(state.gateway.gatewaySessionId, prompt);
     turn = parseInterviewTurn(completion.text);
+    // Soft guard: if the model somehow echoes an earlier question verbatim,
+    // fall back to a rotating deeper follow-up instead of repeating it.
+    if (
+      turn.sender === 'interviewer' &&
+      askedQuestions.some((q) => isSemanticDuplicate(turn.text, q))
+    ) {
+      turn = {
+        sender: 'interviewer',
+        text: deeperFollowUp(askedQuestions),
+      };
+    }
   }
 
   state.transcript.push({ sender: turn.sender, text: turn.text, timestamp: new Date().toISOString() });
