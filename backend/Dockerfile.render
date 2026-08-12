@@ -2,8 +2,15 @@
 #
 # Stage 2 is based on the official OmniRoute image (diegosouzapw/omniroute:latest)
 # so we inherit its standalone Next.js runtime, healthcheck script, non-root `node`
-# user and its entrypoint (/tmp/check-permissions.sh → exec "$@"). We only layer
-# the compiled backend on top and swap the CMD for a supervisor that runs both.
+# user and /app data layout. We layer the compiled backend on top and make the
+# supervisor the explicit PID 1.
+#
+# We deliberately do NOT inherit the base image's ENTRYPOINT
+# (/tmp/check-permissions.sh). It is coupled to that image's internals
+# (runs `node docker/ensure-docker-base-path.mjs` on every boot under `set -e`,
+# mangles NODE_OPTIONS from a moving `latest` tag) and is a silent failure point
+# that can kill the container before our supervisor ever prints a line. Our
+# supervisor sets NODE_OPTIONS/heap per child itself and needs none of that.
 
 # ─────────────────────────────────────────────
 # Stage 1: build the backend (mirrors backend/Dockerfile)
@@ -40,10 +47,13 @@ RUN mkdir -p /app/interviewpilot/data && chown -R node:node /app/interviewpilot
 COPY supervisor.sh /app/supervisor.sh
 RUN chmod +x /app/supervisor.sh && chown node:node /app/supervisor.sh
 
-# The official entrypoint keeps a single process; hand both processes to the
-# supervisor, which forwards SIGTERM/SIGINT and restarts children on exit.
+# The official OmniRoute entrypoint keeps a single process; we hand both
+# processes to the supervisor, which forwards SIGTERM/SIGINT, reaps children,
+# restarts a child that exits, and fails the container if the backend cannot
+# stay alive. Explicit ENTRYPOINT so nothing is inherited from the base image.
 USER node
 
 EXPOSE 20128 3000
 
-CMD ["/app/supervisor.sh"]
+ENTRYPOINT ["/app/supervisor.sh"]
+CMD []

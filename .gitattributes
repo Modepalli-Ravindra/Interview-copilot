@@ -1,0 +1,3 @@
+# Keep shell scripts as LF everywhere. CRLF breaks the shebang and the
+# supervisor inside the Linux container (backend/supervisor.sh).
+*.sh text eol=lf
