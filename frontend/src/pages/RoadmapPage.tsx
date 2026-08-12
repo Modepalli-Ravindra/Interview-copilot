@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import type { Roadmap as RoadmapType, InterviewSession, RoadmapStep } from '../types';
 import { apiFetch } from '../lib/api';
+import { useIsMobile } from '../lib/useMediaQuery';
 
 interface Category {
   label: string;
@@ -32,6 +33,7 @@ const fadePage = {
 };
 
 export default function RoadmapPage() {
+  const isMobile = useIsMobile();
   const [roadmap, setRoadmap] = useState<RoadmapType | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -184,7 +186,7 @@ export default function RoadmapPage() {
       }}>
         <div>
           <h1 style={{
-            fontSize: 26, fontWeight: 700, color: 'hsl(210 10% 92%)',
+            fontSize: isMobile ? 21 : 26, fontWeight: 700, color: 'hsl(210 10% 92%)',
             letterSpacing: '-0.02em', marginBottom: 4,
           }}>
             AI Roadmap
@@ -239,7 +241,7 @@ export default function RoadmapPage() {
           className="glass"
           style={{ borderRadius: 14, padding: '16px 20px', marginBottom: 20 }}
         >
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 12, alignItems: 'end' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr auto auto', gap: 12, alignItems: 'end' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <label style={{ fontSize: 12, color: 'hsl(210 10% 45%)', fontWeight: 600 }}>Role</label>
               <input value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Backend Engineer"
@@ -295,7 +297,7 @@ export default function RoadmapPage() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 20, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr', gap: 20, alignItems: 'start' }}>
 
         {/* ── Left: Timeline ────────────────────────── */}
         <motion.div
@@ -303,7 +305,7 @@ export default function RoadmapPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.05 }}
           className="glass"
-          style={{ borderRadius: 16, padding: '24px' }}
+          style={{ borderRadius: 16, padding: isMobile ? '18px' : '24px' }}
         >
           <h2 style={{ fontSize: 15, fontWeight: 600, color: 'hsl(210 10% 88%)', marginBottom: 22 }}>
             Learning Timeline
@@ -385,7 +387,7 @@ export default function RoadmapPage() {
                         opacity: completed ? 0.85 : 1,
                       }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 6 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 6, flexWrap: 'wrap' }}>
                         <span style={{
                           fontSize: 14, fontWeight: 600, color: 'hsl(210 10% 86%)',
                           textDecoration: completed ? 'line-through' : 'none',
@@ -446,7 +448,7 @@ export default function RoadmapPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
             className="glass"
-            style={{ borderRadius: 16, padding: '24px', textAlign: 'center' }}
+            style={{ borderRadius: 16, padding: isMobile ? '18px' : '24px', textAlign: 'center' }}
           >
             <div style={{ position: 'relative', width: 150, height: 150, margin: '0 auto 16px' }}>
               <svg viewBox="0 0 36 36" width={150} height={150}>
@@ -491,7 +493,7 @@ export default function RoadmapPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.16 }}
             className="glass"
-            style={{ borderRadius: 16, padding: '24px' }}
+            style={{ borderRadius: 16, padding: isMobile ? '18px' : '24px' }}
           >
             <h3 style={{ fontSize: 14, fontWeight: 600, color: 'hsl(210 10% 88%)', marginBottom: 18 }}>
               Skill Areas

@@ -9,6 +9,7 @@ import {
 import type { InterviewSession, GitHubProfile, RepoDetail, ResumeProfile, JdProfile, MatchReport, ProjectProfile } from '../types';
 import { apiFetch } from '../lib/api';
 import { getVoicePrefs, setVoicePrefs, detectVoiceSupport, type VoicePrefs, type VoiceSupport } from '../lib/voice';
+import { useIsMobile, useIsNarrow } from '../lib/useMediaQuery';
 
 type InterviewMode = 'CODING' | 'BEHAVIORAL' | 'SYSTEM_DESIGN' | 'PROJECT' | 'TECHNICAL' | 'HR' | 'MIXED' | 'RESUME_BASED' | 'JD_BASED' | 'SKILLS_BASED' | 'CODING_INTERVIEW';
 type InterviewDifficulty = 'Easy' | 'Medium' | 'Hard';
@@ -70,6 +71,8 @@ const fadePage = {
 
 export default function InterviewsPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
+  const isNarrow = useIsNarrow();
   const [selectedMode, setSelectedMode] = useState<InterviewMode>('CODING');
   const [role, setRole] = useState('');
   const [company, setCompany] = useState('');
@@ -464,7 +467,7 @@ export default function InterviewsPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.05 }}
         className="glass"
-        style={{ borderRadius: 16, padding: '24px', marginBottom: 28 }}
+        style={{ borderRadius: 16, padding: isMobile ? '20px 16px' : '24px', marginBottom: 28 }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           <Sparkles size={15} color="hsl(174 85% 65%)" />
@@ -477,7 +480,7 @@ export default function InterviewsPage() {
         </p>
 
         {/* Mode tiles */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 20 }}>
           {modes.map(({ key, label, desc, icon: Icon }) => {
             const active = selectedMode === key;
             return (
@@ -515,7 +518,8 @@ export default function InterviewsPage() {
 
         {/* Role / company / difficulty */}
         <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto',
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : isNarrow ? '1fr 1fr' : '1fr 1fr 1fr auto',
           gap: 12, alignItems: 'center', marginBottom: 18,
         }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -595,8 +599,8 @@ export default function InterviewsPage() {
             onClick={startInterview}
             disabled={isStarting}
             style={{
-              display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'flex-end',
-              padding: '11px 24px', borderRadius: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'flex-end',
+              padding: '11px 24px', borderRadius: 10, minHeight: 44,
               background: isStarting
                 ? 'hsl(215 15% 16%)'
                 : 'linear-gradient(135deg, hsl(176 40% 45%), hsl(174 85% 60%))',
@@ -605,6 +609,7 @@ export default function InterviewsPage() {
               cursor: isStarting ? 'wait' : 'pointer',
               fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-sans)',
               boxShadow: isStarting ? 'none' : '0 4px 16px hsl(176 40% 45% / 0.35)',
+              width: isMobile ? '100%' : 'auto',
             }}
           >
             {isStarting ? (
@@ -1006,7 +1011,7 @@ export default function InterviewsPage() {
                   </p>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                 <input
                   ref={jdInputRef}
                   type="file"
@@ -1086,7 +1091,7 @@ export default function InterviewsPage() {
           {/* Match analysis chip (from Resume vs JD page) */}
           {matchReport && (
             <div style={{
-              marginTop: 14, display: 'flex', alignItems: 'center', gap: 10,
+              marginTop: 14, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
               padding: '11px 14px', borderRadius: 10,
               background: 'hsl(174 85% 60% / 0.08)', border: '1px solid hsl(174 85% 60% / 0.25)',
             }}>
@@ -1217,12 +1222,13 @@ export default function InterviewsPage() {
       {/* ── Sessions list ────────────────────────────── */}
       <div style={{
         display: 'flex', justifyContent: 'space-between',
-        alignItems: 'center', marginBottom: 16,
+        alignItems: 'center', flexWrap: 'wrap', gap: 12,
+        marginBottom: 16,
       }}>
         <h2 style={{ fontSize: 15, fontWeight: 600, color: 'hsl(210 10% 88%)' }}>
           Your Interviews
         </h2>
-        <div style={{ display: 'flex', gap: 4, background: 'hsl(215 15% 8%)', padding: 4, borderRadius: 10, border: '1px solid hsl(215 15% 16%)' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, background: 'hsl(215 15% 8%)', padding: 4, borderRadius: 10, border: '1px solid hsl(215 15% 16%)' }}>
           {(['ALL', 'CODING', 'TECHNICAL', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT', 'HR', 'MIXED', 'RESUME_BASED', 'JD_BASED', 'SKILLS_BASED', 'CODING_INTERVIEW'] as const).map(f => (
             <button
               key={f}
@@ -1323,8 +1329,8 @@ export default function InterviewsPage() {
                   </span>
                 </p>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexShrink: 0 }}>
-                {typeof s.durationMs === 'number' && s.durationMs > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: isNarrow ? 10 : 18, flexShrink: 0 }}>
+                {!isNarrow && typeof s.durationMs === 'number' && s.durationMs > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'hsl(210 10% 48%)' }}>
                     <Clock size={13} /> {Math.round(s.durationMs / 60000)}m
                   </div>
@@ -1332,7 +1338,7 @@ export default function InterviewsPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 14, fontWeight: 700, color: typeof s.score === 'number' ? scoreColor(s.score) : 'hsl(210 10% 40%)' }}>
                   <TrendingUp size={13} /> {typeof s.score === 'number' ? `${s.score}%` : '—'}
                 </div>
-                <ArrowRight size={15} color="hsl(210 10% 40%)" />
+                {!isNarrow && <ArrowRight size={15} color="hsl(210 10% 40%)" />}
               </div>
             </motion.div>
           ))}

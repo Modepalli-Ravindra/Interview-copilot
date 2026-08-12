@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
   User, Mail, Save, Volume2, Bell, Shield, LogOut,
   ChevronDown, Sparkles, Trash2, MonitorSpeaker, Mic, Check,
 } from 'lucide-react';
+import { useIsMobile } from '../lib/useMediaQuery';
+
+import { useAuth } from '../contexts/AuthContext';
 
 const fadePage = {
   initial:  { opacity: 0 },
@@ -122,7 +125,42 @@ function SettingRow({ icon, iconBg, title, desc, children }: {
 
 export default function SettingsPage() {
   const navigate = useNavigate();
-  const [profile, setProfile] = useState({ firstName: 'Clara', lastName: 'Developer', email: 'clara@example.com' });
+  const isMobile = useIsMobile();
+  const { user, logout } = useAuth();
+  
+  const nameParts = (user?.name || '').split(' ');
+  const defaultFirstName = nameParts[0] || '';
+  const defaultLastName = nameParts.slice(1).join(' ') || '';
+
+  const [profile, setProfile] = useState({ 
+    firstName: defaultFirstName, 
+    lastName: defaultLastName, 
+    email: user?.email || '' 
+  });
+  
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (user?.id) {
+      const savedAvatar = localStorage.getItem(`interviewpilot_avatar_${user.id}`);
+      if (savedAvatar) setAvatarUrl(savedAvatar);
+    }
+  }, [user?.id]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && user?.id) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        setAvatarUrl(dataUrl);
+        localStorage.setItem(`interviewpilot_avatar_${user.id}`, dataUrl);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+  
   const [prefs, setPrefs] = useState({ role: 'Senior Backend Engineer', company: 'Stripe', difficulty: 'Senior' });
   const [voice, setVoice] = useState('Athena (Natural)');
   const [speed, setSpeed] = useState(1.0);
@@ -157,10 +195,11 @@ export default function SettingsPage() {
       <div style={{
         display: 'flex', justifyContent: 'space-between',
         alignItems: 'flex-start', marginBottom: 24,
+        flexWrap: 'wrap', gap: 12,
       }}>
         <div>
           <h1 style={{
-            fontSize: 26, fontWeight: 700, color: 'hsl(210 10% 92%)',
+            fontSize: isMobile ? 21 : 26, fontWeight: 700, color: 'hsl(210 10% 92%)',
             letterSpacing: '-0.02em', marginBottom: 4,
           }}>
             Settings
@@ -192,7 +231,7 @@ export default function SettingsPage() {
       {/* ── Two-column settings layout ──────────────── */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)',
+        gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) minmax(0, 1.2fr)',
         gap: 20, alignItems: 'start',
       }}>
 
@@ -205,7 +244,7 @@ export default function SettingsPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.05 }}
             className="glass"
-            style={{ borderRadius: 16, padding: '24px' }}
+            style={{ borderRadius: 16, padding: isMobile ? '18px' : '24px' }}
           >
             <h2 style={{ ...sectionTitle, marginBottom: 20 }}>
               Profile
@@ -216,22 +255,36 @@ export default function SettingsPage() {
                 background: 'linear-gradient(135deg, hsl(176 40% 40%), hsl(215 80% 50%))',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 22, fontWeight: 700, color: 'white',
+                overflow: 'hidden',
               }}>
-                C
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  profile.firstName.charAt(0).toUpperCase() || 'U'
+                )}
               </div>
               <div>
                 <p style={{ fontSize: 15, fontWeight: 600, color: 'hsl(210 10% 90%)' }}>
                   {profile.firstName} {profile.lastName}
                 </p>
                 <p style={{ fontSize: 12.5, color: 'hsl(210 10% 50%)' }}>Candidate · Member since Jan 2026</p>
-                <button style={{
-                  marginTop: 8, padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
-                  background: 'hsl(215 15% 11%)', color: 'hsl(174 85% 70%)',
-                  border: '1px solid hsl(174 85% 60% / 0.3)',
-                  fontSize: 12, fontWeight: 500, fontFamily: 'var(--font-sans)',
-                }}>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    marginTop: 8, padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
+                    background: 'hsl(215 15% 11%)', color: 'hsl(174 85% 70%)',
+                    border: '1px solid hsl(174 85% 60% / 0.3)',
+                    fontSize: 12, fontWeight: 500, fontFamily: 'var(--font-sans)',
+                  }}>
                   Change Photo
                 </button>
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  style={{ display: 'none' }}
+                />
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -275,7 +328,7 @@ export default function SettingsPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.25 }}
             style={{
-              borderRadius: 16, padding: '24px',
+              borderRadius: 16, padding: isMobile ? '18px' : '24px',
               background: 'hsl(0 85% 60% / 0.04)',
               border: '1px solid hsl(0 85% 60% / 0.2)',
             }}
@@ -323,7 +376,7 @@ export default function SettingsPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
             className="glass"
-            style={{ borderRadius: 16, padding: '24px' }}
+            style={{ borderRadius: 16, padding: isMobile ? '18px' : '24px' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <Sparkles size={15} color="hsl(174 85% 65%)" />
@@ -368,7 +421,7 @@ export default function SettingsPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15 }}
             className="glass"
-            style={{ borderRadius: 16, padding: '24px 24px 8px' }}
+            style={{ borderRadius: 16, padding: isMobile ? '18px 18px 8px' : '24px 24px 8px' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <Volume2 size={15} color="hsl(174 85% 65%)" />
@@ -383,7 +436,7 @@ export default function SettingsPage() {
               title="AI Voice"
               desc="Voice used by the interviewer"
             >
-              <div style={{ width: 170 }}>
+              <div style={{ width: isMobile ? 140 : 170 }}>
                 <SelectField
                   value={voice}
                   options={['Athena (Natural)', 'Nova (Fast)', 'Echo (Deep)', 'Sage (Warm)']}
@@ -413,7 +466,7 @@ export default function SettingsPage() {
                 min={0.5} max={1.5} step={0.1}
                 value={speed}
                 onChange={e => setSpeed(parseFloat(e.target.value))}
-                style={{ width: 150, accentColor: 'hsl(176 40% 45%)' }}
+                style={{ width: isMobile ? '40%' : 150, accentColor: 'hsl(176 40% 45%)', minWidth: 90, flexShrink: 1 }}
               />
             </div>
 
@@ -442,7 +495,7 @@ export default function SettingsPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
             className="glass"
-            style={{ borderRadius: 16, padding: '24px 24px 8px' }}
+            style={{ borderRadius: 16, padding: isMobile ? '18px 18px 8px' : '24px 24px 8px' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <Bell size={15} color="hsl(174 85% 65%)" />

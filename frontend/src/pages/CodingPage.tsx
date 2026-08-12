@@ -8,6 +8,7 @@ import {
 import CodeWorkspace from '../components/interview/CodeWorkspace';
 import { useInterviewStore } from '../stores/interviewStore';
 import { apiFetch } from '../lib/api';
+import { useIsMobile } from '../lib/useMediaQuery';
 import type { Problem, GeneratedQuestion } from '../types';
 
 type Difficulty = 'Easy' | 'Medium' | 'Hard';
@@ -34,6 +35,7 @@ const SOLVED_KEY = 'interviewpilot_solved_problems';
 
 export default function CodingPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const { updateCode, setEditorLanguage } = useInterviewStore();
   const [problems, setProblems] = useState<Problem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,11 +161,11 @@ export default function CodingPage() {
       {/* Header */}
       <div style={{
         display: 'flex', justifyContent: 'space-between',
-        alignItems: 'flex-start', marginBottom: 20,
+        alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12,
       }}>
         <div>
           <h1 style={{
-            fontSize: 26, fontWeight: 700, color: 'hsl(210 10% 92%)',
+            fontSize: isMobile ? 22 : 26, fontWeight: 700, color: 'hsl(210 10% 92%)',
             letterSpacing: '-0.02em', marginBottom: 4,
           }}>
             Coding Practice
@@ -222,8 +224,8 @@ export default function CodingPage() {
         </span>
       </motion.button>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 12 }}>
-        <p style={{ fontSize: 12.5, color: 'hsl(210 10% 48%)', margin: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
+        <p style={{ fontSize: 12.5, color: 'hsl(210 10% 48%)', margin: 0, flex: 1, minWidth: 200 }}>
           Generate a fresh question grounded in your session skills — or solve a curated problem below.
         </p>
         <motion.button
@@ -233,7 +235,7 @@ export default function CodingPage() {
           disabled={generating}
           style={{
             display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
-            padding: '9px 18px', borderRadius: 10, cursor: generating ? 'wait' : 'pointer',
+            padding: isMobile ? '9px 14px' : '9px 18px', borderRadius: 10, cursor: generating ? 'wait' : 'pointer',
             background: 'linear-gradient(135deg, hsl(280 70% 45%), hsl(320 75% 55%))',
             border: 'none', color: 'white',
             fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-sans)',
@@ -262,8 +264,12 @@ export default function CodingPage() {
       )}
 
       <div style={{
-        display: 'grid', gridTemplateColumns: '340px 1fr', gap: 16,
-        height: 'calc(100vh - 190px)', minHeight: 480,
+        display: 'grid',
+        gridTemplateColumns: isMobile ? '1fr' : '340px 1fr',
+        gridTemplateRows: isMobile ? 'minmax(200px, 36vh) auto' : undefined,
+        gap: 16,
+        height: isMobile ? 'auto' : 'calc(100vh - 190px)',
+        minHeight: isMobile ? undefined : 480,
       }}>
         {/* ── Left: Problem list ─────────────────────── */}
         <div style={{
@@ -371,8 +377,8 @@ export default function CodingPage() {
             <div style={{
               background: 'hsl(215 15% 8%)',
               border: '1px solid hsl(215 15% 14%)',
-              borderRadius: 16, padding: '20px 24px',
-              overflowY: 'auto', flexShrink: 0, maxHeight: 260,
+              borderRadius: 16, padding: isMobile ? '16px 18px' : '20px 24px',
+              overflowY: isMobile ? 'visible' : 'auto', flexShrink: 0, maxHeight: isMobile ? 'none' : 260,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                 <div style={{
@@ -387,7 +393,7 @@ export default function CodingPage() {
                   <div style={{ fontSize: 15, fontWeight: 600, color: 'hsl(210 10% 90%)' }}>
                     {selected.title}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap' }}>
                     <span style={{
                       fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
                       color: diffColor[selected.difficulty],
@@ -419,7 +425,10 @@ export default function CodingPage() {
             </div>
 
             {/* Code workspace */}
-            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <div style={{
+              flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
+              height: isMobile ? 520 : undefined,
+            }}>
               <CodeWorkspace
                 testCases={selected.testCases}
                 hiddenTestCases={isGeneratedSelected ? generated.hiddenTestCases : undefined}

@@ -4,8 +4,10 @@ import { apiFetch } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Bot, Mail, Lock, User, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useIsMobile } from '../lib/useMediaQuery';
 
 export default function AuthPage() {
+  const isMobile = useIsMobile();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -80,7 +82,7 @@ export default function AuthPage() {
       background: 'radial-gradient(circle at top right, hsl(215 20% 12%), hsl(220 20% 4%))',
       fontFamily: 'var(--font-sans)',
       color: 'white',
-      padding: 24,
+      padding: isMobile ? 12 : 24,
     }}>
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
@@ -90,7 +92,7 @@ export default function AuthPage() {
           background: 'hsl(215 15% 8%)',
           borderRadius: 24,
           border: '1px solid hsl(215 15% 15%)',
-          padding: 40,
+          padding: isMobile ? 24 : 40,
           boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
         }}
       >
@@ -131,7 +133,7 @@ export default function AuthPage() {
                 Full Name
               </label>
               <div style={{ position: 'relative' }}>
-                <User size={18} color="hsl(210 10% 40%)" style={{ position: 'absolute', left: 12, top: 11 }} />
+                <User size={18} color="hsl(210 10% 40%)" style={{ position: 'absolute', left: 12, top: 13 }} />
                 <input
                   type="text"
                   required
@@ -139,7 +141,7 @@ export default function AuthPage() {
                   onChange={e => setName(e.target.value)}
                   placeholder="John Doe"
                   style={{
-                    width: '100%', padding: '10px 12px 10px 40px',
+                    width: '100%', padding: '12px 12px 12px 40px', minHeight: 44,
                     background: 'hsl(215 15% 5%)',
                     border: '1px solid hsl(215 15% 18%)',
                     borderRadius: 8, color: 'white',
@@ -158,7 +160,7 @@ export default function AuthPage() {
               Email Address
             </label>
             <div style={{ position: 'relative' }}>
-              <Mail size={18} color="hsl(210 10% 40%)" style={{ position: 'absolute', left: 12, top: 11 }} />
+              <Mail size={18} color="hsl(210 10% 40%)" style={{ position: 'absolute', left: 12, top: 13 }} />
               <input
                 type="email"
                 required
@@ -184,7 +186,7 @@ export default function AuthPage() {
               Password
             </label>
             <div style={{ position: 'relative' }}>
-              <Lock size={18} color="hsl(210 10% 40%)" style={{ position: 'absolute', left: 12, top: 11 }} />
+              <Lock size={18} color="hsl(210 10% 40%)" style={{ position: 'absolute', left: 12, top: 13 }} />
               <input
                 type="password"
                 required
@@ -212,7 +214,7 @@ export default function AuthPage() {
                 Confirm Password
               </label>
               <div style={{ position: 'relative' }}>
-                <Lock size={18} color="hsl(210 10% 40%)" style={{ position: 'absolute', left: 12, top: 11 }} />
+                <Lock size={18} color="hsl(210 10% 40%)" style={{ position: 'absolute', left: 12, top: 13 }} />
                 <input
                   type="password"
                   required
@@ -221,7 +223,7 @@ export default function AuthPage() {
                   onChange={e => setConfirmPassword(e.target.value)}
                   placeholder="••••••••"
                   style={{
-                    width: '100%', padding: '10px 12px 10px 40px',
+                    width: '100%', padding: '12px 12px 12px 40px', minHeight: 44,
                     background: 'hsl(215 15% 5%)',
                     border: '1px solid hsl(215 15% 18%)',
                     borderRadius: 8, color: 'white',
@@ -240,7 +242,7 @@ export default function AuthPage() {
             disabled={loading}
             style={{
               marginTop: 8,
-              width: '100%', padding: '12px',
+              width: '100%', padding: '12px', minHeight: 48,
               background: 'hsl(174 85% 65%)',
               color: 'hsl(220 20% 5%)',
               border: 'none', borderRadius: 8,

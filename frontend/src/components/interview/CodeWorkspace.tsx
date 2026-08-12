@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useInterviewStore } from '../../stores/interviewStore';
 import { apiFetch } from '../../lib/api';
+import { useIsMobile, useIsNarrow } from '../../lib/useMediaQuery';
 import { Play, CheckCircle2, XCircle, Clock, ChevronDown, Unplug } from 'lucide-react';
 
 const LANGUAGES = [
@@ -31,6 +32,8 @@ interface CodeWorkspaceProps {
 }
 
 export default function CodeWorkspace({ testCases = [], hiddenTestCases, expectedComplexity, sessionId, problem, codingInterview, onAccepted }: CodeWorkspaceProps) {
+  const isMobile = useIsMobile();
+  const isNarrow = useIsNarrow();
   const {
     currentCode, editorLanguage, isRunningCode,
     lastCodeResult, updateCode, setEditorLanguage, setRunningCode, setCodeResult,
@@ -124,32 +127,35 @@ export default function CodeWorkspace({ testCases = [], hiddenTestCases, expecte
       {/* Toolbar */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '10px 16px',
+        gap: 8,
+        padding: isMobile ? '8px 10px' : '10px 16px',
         background: 'hsl(215 15% 8%)',
         borderBottom: '1px solid hsl(215 15% 13%)',
         flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, minWidth: 0 }}>
           {/* Traffic lights */}
-          {['hsl(0 85% 60%)', 'hsl(35 90% 55%)', 'hsl(142 70% 50%)'].map(c => (
+          {!isMobile && ['hsl(0 85% 60%)', 'hsl(35 90% 55%)', 'hsl(142 70% 50%)'].map(c => (
             <div key={c} style={{ width: 11, height: 11, borderRadius: '50%', background: c }} />
           ))}
           <span style={{
-            marginLeft: 8, fontSize: 13, fontWeight: 600,
+            marginLeft: isMobile ? 0 : 8,
+            fontSize: isMobile ? 12 : 13, fontWeight: 600,
             color: 'hsl(174 85% 65%)', fontFamily: 'var(--font-mono)',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>
             solution.{editorLanguage === 'javascript' ? 'js' : editorLanguage === 'python' ? 'py' : editorLanguage}
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10, flexShrink: 0 }}>
           {/* Language selector */}
           <div style={{ position: 'relative' }}>
             <button
               onClick={() => setShowLangMenu(s => !s)}
               style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '5px 12px', borderRadius: 8,
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: isMobile ? '5px 8px' : '5px 12px', borderRadius: 8,
                 background: 'hsl(215 15% 12%)',
                 border: '1px solid hsl(215 15% 20%)',
                 color: 'hsl(210 10% 70%)',
@@ -157,7 +163,7 @@ export default function CodeWorkspace({ testCases = [], hiddenTestCases, expecte
                 fontFamily: 'var(--font-sans)',
               }}
             >
-              {currentLang.label} <ChevronDown size={12} />
+              {isNarrow ? currentLang.value : currentLang.label} <ChevronDown size={12} />
             </button>
             {showLangMenu && (
               <motion.div
@@ -211,19 +217,19 @@ export default function CodeWorkspace({ testCases = [], hiddenTestCases, expecte
             onClick={runCode}
             disabled={isRunningCode}
             style={{
-              display: 'flex', alignItems: 'center', gap: 7,
-              padding: '6px 16px', borderRadius: 8, border: 'none',
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: isMobile ? '6px 12px' : '6px 16px', borderRadius: 8, border: 'none',
               background: isRunningCode
                 ? 'hsl(176 40% 32%)'
                 : 'linear-gradient(135deg, hsl(176 40% 42%), hsl(174 85% 55%))',
               color: 'hsl(220 15% 5%)', cursor: isRunningCode ? 'wait' : 'pointer',
-              fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-sans)',
+              fontSize: isMobile ? 12.5 : 13, fontWeight: 700, fontFamily: 'var(--font-sans)',
               boxShadow: isRunningCode ? 'none' : '0 2px 12px hsl(176 40% 42% / 0.4)',
               transition: 'background 0.25s',
             }}
           >
             <Play size={13} fill="hsl(220 15% 5%)" />
-            {isRunningCode ? 'Running…' : 'Run Tests'}
+            {isRunningCode ? 'Running…' : isMobile ? 'Run' : 'Run Tests'}
           </motion.button>
         </div>
       </div>
@@ -239,9 +245,9 @@ export default function CodeWorkspace({ testCases = [], hiddenTestCases, expecte
             background: 'hsl(220 15% 4%)',
             color: 'hsl(174 85% 78%)',
             border: 'none', outline: 'none',
-            resize: 'none', padding: '20px 24px',
+            resize: 'none', padding: isMobile ? '14px 16px' : '20px 24px',
             fontFamily: 'var(--font-mono)',
-            fontSize: 14, lineHeight: 1.75,
+            fontSize: isMobile ? 13 : 14, lineHeight: 1.75,
             tabSize: 4,
           }}
         />
@@ -273,10 +279,11 @@ export default function CodeWorkspace({ testCases = [], hiddenTestCases, expecte
               Executing in sandbox…
             </div>
           ) : lastCodeResult && st && (
-            <div style={{ padding: '14px 20px' }}>
+            <div style={{ padding: isMobile ? '12px 14px' : '14px 20px' }}>
               {/* Status row */}
               <div style={{
-                display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+                display: 'flex', alignItems: 'center', gap: 8,
+                flexWrap: 'wrap', rowGap: 8, marginBottom: 10,
               }}>
                 <st.icon size={15} color={st.color} />
                 <span style={{ fontSize: 13, fontWeight: 700, color: st.color }}>

@@ -13,6 +13,7 @@ import {
   startCodingInterview, getCodingInterviewStatus, requestCodingHint,
   completeCodingQuestion, nextCodingQuestion, getCodingInterviewFeedback,
 } from '../lib/codingInterviewApi';
+import { useIsMobile, useIsNarrow } from '../lib/useMediaQuery';
 import type {
   PublicCodingQuestion, CodingInterviewStatus, FeedbackReport,
   CodingInterviewReport,
@@ -49,6 +50,7 @@ const templateFor = (q: PublicCodingQuestion): string =>
 
 export default function CodingInterviewPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const { sessionId: paramSessionId } = useParams();
   const { setEditorLanguage, updateCode } = useInterviewStore();
 
@@ -240,7 +242,7 @@ export default function CodingInterviewPage() {
   // ── Setup view ─────────────────────────────────────────────
   if (!sessionId || (!status && !loading && !report && !busy)) {
     return (
-      <motion.div {...fadePage} style={{ minHeight: '100vh', maxWidth: 860, margin: '0 auto', paddingTop: 24 }}>
+      <motion.div {...fadePage} style={{ minHeight: '100vh', maxWidth: 860, margin: '0 auto', padding: isMobile ? '16px 16px' : '24px 24px 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
           <div style={{
             width: 42, height: 42, borderRadius: 12,
@@ -273,14 +275,14 @@ export default function CodingInterviewPage() {
         <div style={{
           background: 'hsl(215 15% 8%)',
           border: '1px solid hsl(215 15% 14%)',
-          borderRadius: 16, padding: '22px 24px',
+          borderRadius: 16, padding: isMobile ? '20px 16px' : '22px 24px',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <UserRound size={15} color="hsl(174 85% 65%)" />
             <span style={{ fontSize: 14, fontWeight: 600, color: 'hsl(210 10% 88%)' }}>New interview</span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 12 }}>
             <label style={{ fontSize: 12, color: 'hsl(210 10% 55%)', display: 'flex', flexDirection: 'column', gap: 6 }}>
               Role
               <input value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Senior Backend Engineer" style={inputStyle} />
@@ -291,7 +293,7 @@ export default function CodingInterviewPage() {
             </label>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 12 }}>
             <label style={{ fontSize: 12, color: 'hsl(210 10% 55%)', display: 'flex', flexDirection: 'column', gap: 6 }}>
               Resume text <span style={{ fontWeight: 400, opacity: 0.7 }}>(optional)</span>
               <textarea
@@ -319,7 +321,7 @@ export default function CodingInterviewPage() {
             <input value={skills} onChange={e => setSkills(e.target.value)} placeholder="python, system design, sql" style={inputStyle} />
           </label>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 20 }}>
             <label style={{ fontSize: 12, color: 'hsl(210 10% 55%)', display: 'flex', flexDirection: 'column', gap: 6 }}>
               Number of questions
               <select value={questionCount} onChange={e => setQuestionCount(Number(e.target.value))} style={inputStyle}>
@@ -361,12 +363,12 @@ export default function CodingInterviewPage() {
             <RefreshCw size={15} color="hsl(174 85% 65%)" />
             <span style={{ fontSize: 14, fontWeight: 600, color: 'hsl(210 10% 88%)' }}>Resume an existing interview</span>
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 10, flexDirection: isMobile ? 'column' : 'row' }}>
             <input
               value={resumeSessionId}
               onChange={e => setResumeSessionId(e.target.value)}
               placeholder="Paste a session id"
-              style={inputStyle}
+              style={{ ...inputStyle, flex: 1, minWidth: 0 }}
             />
             <motion.button
               whileHover={{ scale: 1.03 }}
@@ -374,7 +376,9 @@ export default function CodingInterviewPage() {
               onClick={() => resumeSessionId.trim() && beginInterview(resumeSessionId.trim())}
               disabled={!resumeSessionId.trim() || loading}
               style={{
-                display: 'flex', alignItems: 'center', gap: 7, padding: '0 18px', borderRadius: 10,
+                display: 'flex', alignItems: 'center', gap: 7,
+                padding: isMobile ? '10px 0' : '0 18px', borderRadius: 10,
+                justifyContent: 'center', width: isMobile ? '100%' : 'auto',
                 cursor: resumeSessionId.trim() && !loading ? 'pointer' : 'not-allowed',
                 background: 'hsl(215 15% 14%)',
                 border: '1px solid hsl(215 15% 22%)',
@@ -407,8 +411,8 @@ export default function CodingInterviewPage() {
         display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 16, flexWrap: 'wrap',
       }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: 'hsl(210 10% 92%)', letterSpacing: '-0.02em', margin: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap', rowGap: 6 }}>
+            <h1 style={{ fontSize: isMobile ? 19 : 22, fontWeight: 700, color: 'hsl(210 10% 92%)', letterSpacing: '-0.02em', margin: 0 }}>
               Coding Interview
             </h1>
             <span style={{
@@ -522,8 +526,13 @@ export default function CodingInterviewPage() {
         </div>
       ) : (
         <div style={{
-          display: 'grid', gridTemplateColumns: 'minmax(380px, 42%) 1fr', gap: 16,
-          height: 'calc(100vh - 210px)', minHeight: 460,
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'minmax(380px, 42%) 1fr',
+          gridTemplateRows: isMobile ? 'minmax(320px, 44vh) minmax(400px, 52vh)' : undefined,
+          gap: isMobile ? 12 : 16,
+          height: isMobile ? 'auto' : 'calc(100vh - 210px)',
+          minHeight: isMobile ? undefined : 460,
+          alignItems: 'start',
         }}>
           <div style={{
             display: 'flex', flexDirection: 'column', minHeight: 0,
@@ -676,6 +685,8 @@ function ReportModal({ report, coding, onClose }: {
   coding: CodingInterviewReport;
   onClose: () => void;
 }) {
+  const isMobile = useIsMobile();
+  const isNarrow = useIsNarrow();
   const m = coding.metrics;
   const verified = coding.hasVerifiedExecution;
   const sourceColor = report.feedbackSource === 'ai'
@@ -698,7 +709,7 @@ function ReportModal({ report, coding, onClose }: {
       background: 'hsl(220 15% 3% / 0.75)',
       backdropFilter: 'blur(6px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 24, overflowY: 'auto',
+      padding: isMobile ? 10 : 24, overflowY: 'auto',
     }}>
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
@@ -714,7 +725,8 @@ function ReportModal({ report, coding, onClose }: {
       >
         <div style={{
           display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-          padding: '20px 24px', borderBottom: '1px solid hsl(215 15% 14%)',
+          gap: 12,
+          padding: isMobile ? '16px' : '20px 24px', borderBottom: '1px solid hsl(215 15% 14%)',
           position: 'sticky', top: 0, background: 'hsl(215 15% 7%)', zIndex: 2,
         }}>
           <div>
@@ -755,11 +767,13 @@ function ReportModal({ report, coding, onClose }: {
           </button>
         </div>
 
-        <div style={{ padding: '20px 24px' }}>
+        <div style={{ padding: isMobile ? '16px' : '20px 24px' }}>
           <p style={{ color: 'hsl(210 10% 75%)', lineHeight: 1.6, fontSize: 13.5, marginTop: 0 }}>{report.summary}</p>
 
           <div style={{
             display: 'flex', alignItems: 'center', gap: 14,
+            flexWrap: isNarrow ? 'wrap' : 'nowrap', justifyContent: isNarrow ? 'center' : 'flex-start',
+            textAlign: isNarrow ? 'center' : 'left',
             padding: '14px 16px', borderRadius: 14, marginBottom: 16,
             background: 'hsl(215 15% 9%)', border: '1px solid hsl(215 15% 14%)',
           }}>
@@ -768,11 +782,11 @@ function ReportModal({ report, coding, onClose }: {
               <div style={{ fontSize: 11, color: 'hsl(210 10% 50%)', marginTop: 4 }}>Overall score</div>
               <div style={{ fontSize: 9.5, color: 'hsl(210 10% 42%)', marginTop: 1 }}>server-derived</div>
             </div>
-            <div style={{ width: 1, height: 46, background: 'hsl(215 15% 14%)' }} />
-            <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-              <Metric label={verified ? 'Tests passed' : 'Tests (unverified)'} value={verified ? `${m.totalTestsPassed}/${m.totalTests}` : `${m.questionsAttempted} attempted`} />
-              <Metric label="Solved" value={`${m.questionsSolved}/${m.questionsAttempted}`} />
-              <Metric label="Avg attempts" value={String(m.averageAttempts)} />
+            {!isNarrow && <div style={{ width: 1, height: 46, background: 'hsl(215 15% 14%)' }} />}
+            <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: isMobile ? 8 : 10, width: isNarrow ? '100%' : undefined }}>
+              <Metric compact={isMobile} label={verified ? 'Tests passed' : 'Tests (unverified)'} value={verified ? `${m.totalTestsPassed}/${m.totalTests}` : `${m.questionsAttempted} attempted`} />
+              <Metric compact={isMobile} label="Solved" value={`${m.questionsSolved}/${m.questionsAttempted}`} />
+              <Metric compact={isMobile} label="Avg attempts" value={String(m.averageAttempts)} />
             </div>
           </div>
 
@@ -812,7 +826,8 @@ function ReportModal({ report, coding, onClose }: {
                     : 'hsl(210 10% 50%)';
                   return (
                     <div key={q.questionId} style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
+                      display: 'flex', alignItems: 'center', gap: 10, rowGap: 6,
+                      flexWrap: isMobile ? 'wrap' : 'nowrap',
                       padding: '9px 12px', borderRadius: 10,
                       background: 'hsl(215 15% 8%)', border: '1px solid hsl(215 15% 13%)',
                     }}>
@@ -823,7 +838,7 @@ function ReportModal({ report, coding, onClose }: {
                       }}>
                         {q.difficulty}
                       </span>
-                      <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'hsl(210 10% 82%)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'hsl(210 10% 82%)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: isMobile ? 'normal' : 'nowrap' }}>
                         {q.title}
                       </span>
                       {q.fromMock ? (
@@ -835,9 +850,11 @@ function ReportModal({ report, coding, onClose }: {
                           {q.passedCount}/{q.totalCount}
                         </span>
                       )}
-                      <span style={{ fontSize: 11, color: 'hsl(210 10% 45%)', flexShrink: 0 }}>
-                        {q.attempts} run{q.attempts === 1 ? '' : 's'} � {fmt(q.timeTakenMs)}
-                      </span>
+                      {!isNarrow && (
+                        <span style={{ fontSize: 11, color: 'hsl(210 10% 45%)', flexShrink: 0 }}>
+                          {q.attempts} run{q.attempts === 1 ? '' : 's'} � {fmt(q.timeTakenMs)}
+                        </span>
+                      )}
                       <span style={{
                         fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 999,
                         color: clsColor, background: `${clsColor}1c`, flexShrink: 0,
@@ -851,7 +868,7 @@ function ReportModal({ report, coding, onClose }: {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 16 }}>
             <TopicCard title="Mastered" color="hsl(142 70% 55%)" items={m.masteredTopics} fallback="No verified mastery yet" />
             <TopicCard title="Practice next" color="hsl(35 90% 55%)" items={m.practiceTopics} fallback="No flagged topics" />
           </div>
@@ -913,10 +930,10 @@ function QuestionTimer({ startedAt }: { startedAt: string | null }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, compact }: { label: string; value: string; compact?: boolean }) {
   return (
     <div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: 'hsl(210 10% 90%)' }}>{value}</div>
+      <div style={{ fontSize: compact ? 13 : 16, fontWeight: 700, color: 'hsl(210 10% 90%)' }}>{value}</div>
       <div style={{ fontSize: 10.5, color: 'hsl(210 10% 50%)', marginTop: 2 }}>{label}</div>
     </div>
   );

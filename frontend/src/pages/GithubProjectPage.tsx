@@ -18,6 +18,7 @@ import type {
   InterviewDifficulty,
 } from '../types';
 import { apiFetch } from '../lib/api';
+import { useIsMobile } from '../lib/useMediaQuery';
 
 const fadePage = {
   initial: { opacity: 0 },
@@ -53,12 +54,13 @@ function SectionCard({ title, icon: Icon, accent = 'hsl(174 85% 65%)', children 
   accent?: string;
   children: React.ReactNode;
 }) {
+  const isMobile = useIsMobile();
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       className="glass"
-      style={{ borderRadius: 16, padding: '20px 22px' }}
+      style={{ borderRadius: 16, padding: isMobile ? '16px' : '20px 22px' }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 16 }}>
         <div style={{
@@ -170,6 +172,7 @@ function ConsistencyReport({ report, kind }: { report: RepoConsistency | Project
 
 export default function GithubProjectPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [url, setUrl] = useState('');
   const [resumeSkills, setResumeSkills] = useState('');
   const [jdSkills, setJdSkills] = useState('');
@@ -278,7 +281,7 @@ export default function GithubProjectPage() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, color: 'hsl(210 10% 92%)', letterSpacing: '-0.02em', marginBottom: 4 }}>
+          <h1 style={{ fontSize: isMobile ? 21 : 26, fontWeight: 700, color: 'hsl(210 10% 92%)', letterSpacing: '-0.02em', marginBottom: 4 }}>
             GitHub Project Analysis
           </h1>
           <p style={{ fontSize: 14, color: 'hsl(210 10% 50%)' }}>
@@ -307,7 +310,7 @@ export default function GithubProjectPage() {
         className="glass"
         style={{ borderRadius: 16, padding: '20px 22px', marginBottom: 20 }}
       >
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 12, alignItems: 'center', marginBottom: 12 }}>
           <div style={{ position: 'relative' }}>
             <Search size={16} color="hsl(210 10% 45%)" style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)' }} />
             <input
@@ -329,8 +332,8 @@ export default function GithubProjectPage() {
             onClick={runAnalysis}
             disabled={busy || !url.trim()}
             style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '12px 24px', borderRadius: 10,
+              display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
+              padding: isMobile ? '12px 0' : '12px 24px', borderRadius: 10,
               background: busy || !url.trim()
                 ? 'hsl(215 15% 14%)'
                 : 'linear-gradient(135deg, hsl(176 40% 45%), hsl(174 85% 60%))',
@@ -338,6 +341,7 @@ export default function GithubProjectPage() {
               color: busy || !url.trim() ? 'hsl(210 10% 40%)' : 'hsl(220 15% 5%)',
               cursor: busy || !url.trim() ? 'not-allowed' : 'pointer',
               fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-sans)',
+              width: isMobile ? '100%' : 'auto',
             }}
           >
             {busy ? (
@@ -629,13 +633,13 @@ export default function GithubProjectPage() {
                     flexShrink: 0, width: 8, height: 8, borderRadius: '50%',
                     background: entry.importance === 'high' ? 'hsl(174 85% 60%)' : entry.importance === 'medium' ? 'hsl(35 90% 60%)' : 'hsl(210 10% 40%)',
                   }} />
-                  <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 700, width: 100, color: 'hsl(210 10% 55%)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 700, width: isMobile ? 74 : 100, color: 'hsl(210 10% 55%)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     {entry.importance}
                   </span>
                   <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'hsl(210 10% 78%)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {entry.path}
                   </span>
-                  {entry.language && (
+                  {entry.language && !isMobile && (
                     <span style={{ flexShrink: 0, fontSize: 11, color: 'hsl(210 10% 45%)' }}>{entry.language}</span>
                   )}
                 </div>
@@ -696,7 +700,7 @@ export default function GithubProjectPage() {
 
           {/* Retrieval */}
           <SectionCard title="Ask about this repository" icon={Search} accent="hsl(174 85% 65%)">
-            <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexDirection: isMobile ? 'column' : 'row' }}>
               <input
                 value={ask}
                 onChange={(e) => setAsk(e.target.value)}
@@ -713,13 +717,14 @@ export default function GithubProjectPage() {
                 onClick={askQuestion}
                 disabled={asking || !ask.trim()}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 7,
-                  padding: '11px 20px', borderRadius: 10,
+                  display: 'flex', alignItems: 'center', gap: 7, justifyContent: 'center',
+                  padding: isMobile ? '11px 0' : '11px 20px', borderRadius: 10,
                   background: ask.trim() && !asking ? 'hsl(174 85% 60% / 0.14)' : 'hsl(215 15% 12%)',
                   color: ask.trim() && !asking ? 'hsl(174 85% 70%)' : 'hsl(210 10% 40%)',
                   border: '1px solid hsl(215 15% 20%)',
                   cursor: ask.trim() && !asking ? 'pointer' : 'not-allowed',
                   fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                  width: isMobile ? '100%' : 'auto',
                 }}
               >
                 {asking ? <Loader2 size={14} /> : <Search size={14} />}
@@ -758,7 +763,7 @@ export default function GithubProjectPage() {
               The interview engine receives this structured ProjectProfile (auto-summarized into githubSummary) and asks
               pointed questions about the actual code, architecture, and README claims.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 10, alignItems: 'center' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr auto', gap: 10, alignItems: 'center' }}>
               <input
                 value={role}
                 onChange={(e) => setRole(e.target.value)}

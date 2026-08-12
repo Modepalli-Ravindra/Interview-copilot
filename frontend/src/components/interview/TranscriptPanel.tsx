@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useInterviewStore } from '../../stores/interviewStore';
 import type { TranscriptEntry } from '../../types';
 import { Bot, User, Loader2, GraduationCap, Download } from 'lucide-react';
+import { useIsMobile } from '../../lib/useMediaQuery';
 
 interface TranscriptPanelProps {
   isThinking: boolean;
@@ -75,6 +76,7 @@ function downloadTranscript(entries: TranscriptEntry[]): void {
 export default function TranscriptPanel({ isThinking }: TranscriptPanelProps) {
   const { transcript } = useInterviewStore();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -85,7 +87,7 @@ export default function TranscriptPanel({ isThinking }: TranscriptPanelProps) {
     <div style={{
       flex: 1, overflowY: 'auto',
       display: 'flex', flexDirection: 'column',
-      gap: 16, padding: '20px 20px 12px',
+      gap: 16, padding: isMobile ? '16px 12px 12px' : '20px 20px 12px',
     }}>
       {/* Toolbar */}
       <div style={{
@@ -100,7 +102,8 @@ export default function TranscriptPanel({ isThinking }: TranscriptPanelProps) {
             onClick={() => downloadTranscript(transcript)}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
-              padding: '5px 12px', borderRadius: 8, cursor: 'pointer',
+              padding: isMobile ? '8px 12px' : '5px 12px', borderRadius: 8, cursor: 'pointer',
+              minHeight: 36,
               background: 'hsl(215 15% 11%)',
               border: '1px solid hsl(215 15% 18%)',
               color: 'hsl(210 10% 60%)', fontSize: 12, fontWeight: 500,

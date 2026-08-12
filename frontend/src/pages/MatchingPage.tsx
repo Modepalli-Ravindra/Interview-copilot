@@ -9,6 +9,7 @@ import type {
   ResumeProfile, JdProfile, MatchReport, ExtractedSkill, InterviewMode, InterviewDifficulty,
 } from '../types';
 import { apiFetch } from '../lib/api';
+import { useIsMobile } from '../lib/useMediaQuery';
 
 const MATCH_CONTEXT_KEY = 'interviewpilot_match_context';
 
@@ -85,6 +86,7 @@ function SkillChip({ children, tone }: { children: React.ReactNode; tone: 'match
 
 export default function MatchingPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   // Resume state
   const resumeInputRef = useRef<HTMLInputElement>(null);
@@ -288,7 +290,7 @@ export default function MatchingPage() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, color: 'hsl(210 10% 92%)', letterSpacing: '-0.02em', marginBottom: 4 }}>
+          <h1 style={{ fontSize: isMobile ? 21 : 26, fontWeight: 700, color: 'hsl(210 10% 92%)', letterSpacing: '-0.02em', marginBottom: 4 }}>
             Resume vs JD
           </h1>
           <p style={{ fontSize: 14, color: 'hsl(210 10% 50%)' }}>
@@ -512,7 +514,7 @@ export default function MatchingPage() {
 
       {/* Role / company / difficulty + analyze */}
       <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto',
+        display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr auto',
         gap: 12, alignItems: 'center', marginBottom: 4,
       }}>
         <input
@@ -555,8 +557,8 @@ export default function MatchingPage() {
           onClick={analyzeMatch}
           disabled={!canMatch || matching}
           style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '11px 22px', borderRadius: 10,
+            display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
+            padding: isMobile ? '12px 0' : '11px 22px', borderRadius: 10,
             background: canMatch && !matching
               ? 'linear-gradient(135deg, hsl(176 40% 45%), hsl(174 85% 60%))'
               : 'hsl(215 15% 14%)',
@@ -564,6 +566,7 @@ export default function MatchingPage() {
             color: canMatch && !matching ? 'hsl(220 15% 5%)' : 'hsl(210 10% 40%)',
             cursor: canMatch && !matching ? 'pointer' : 'not-allowed',
             fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-sans)',
+            width: isMobile ? '100%' : 'auto',
           }}
         >
           {matching ? <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.9, ease: 'linear' }}><Loader2 size={15} /></motion.div> : <Zap size={15} fill={canMatch ? 'hsl(220 15% 5%)' : 'none'} />}
@@ -581,7 +584,7 @@ export default function MatchingPage() {
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           className="glass"
-          style={{ borderRadius: 18, padding: '26px', marginTop: 20 }}
+          style={{ borderRadius: 18, padding: isMobile ? '18px 14px' : '26px', marginTop: 20 }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
             <Sparkles size={16} color="hsl(174 85% 65%)" />
@@ -594,7 +597,7 @@ export default function MatchingPage() {
             </button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 28, alignItems: 'center', marginBottom: 24 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '220px 1fr', gap: isMobile ? 18 : 28, alignItems: 'center', marginBottom: 24 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
               <ScoreRing value={match.overallMatch} />
               <span style={{ fontSize: 12, fontWeight: 600, color: 'hsl(210 10% 55%)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
@@ -702,12 +705,13 @@ export default function MatchingPage() {
               onClick={() => startInterview('JD_BASED')}
               disabled={starting}
               style={{
-                display: 'flex', alignItems: 'center', gap: 8,
+                display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
                 padding: '12px 22px', borderRadius: 10,
                 background: 'linear-gradient(135deg, hsl(176 40% 45%), hsl(174 85% 60%))',
                 border: 'none', color: 'hsl(220 15% 5%)',
                 cursor: starting ? 'wait' : 'pointer',
                 fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-sans)',
+                flex: isMobile ? '1 1 100%' : undefined,
               }}
             >
               {starting ? <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.9, ease: 'linear' }}><Loader2 size={15} /></motion.div> : <PlayIcon />}
@@ -719,13 +723,14 @@ export default function MatchingPage() {
               onClick={() => startInterview('RESUME_BASED')}
               disabled={starting}
               style={{
-                display: 'flex', alignItems: 'center', gap: 8,
+                display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
                 padding: '12px 22px', borderRadius: 10,
                 background: 'hsl(215 15% 12%)',
                 border: '1px solid hsl(174 85% 60% / 0.35)',
                 color: 'hsl(174 85% 70%)',
                 cursor: starting ? 'wait' : 'pointer',
                 fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                flex: isMobile ? '1 1 100%' : undefined,
               }}
             >
               <FileText size={15} /> Resume-based interview
@@ -733,13 +738,14 @@ export default function MatchingPage() {
             <button
               onClick={sendToInterviewSetup}
               style={{
-                display: 'flex', alignItems: 'center', gap: 8,
+                display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
                 padding: '12px 22px', borderRadius: 10,
                 background: 'none',
                 border: '1px solid hsl(215 15% 24%)',
                 color: 'hsl(210 10% 60%)',
                 cursor: 'pointer',
                 fontSize: 13.5, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                flex: isMobile ? '1 1 100%' : undefined,
               }}
             >
               Send to Interview setup <ArrowRight size={14} />
@@ -777,12 +783,12 @@ function ResumePreview({ profile, fileName }: { profile: ResumeProfile; fileName
       animate={{ opacity: 1, y: 0 }}
       style={{ borderRadius: 14, padding: '18px', marginTop: 4, marginBottom: 16, background: 'hsl(215 15% 8%)', border: '1px solid hsl(215 15% 18%)' }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         <Sparkles size={14} color="hsl(174 85% 65%)" />
         <p style={{ fontSize: 12.5, fontWeight: 700, color: 'hsl(210 10% 88%)' }}>
           Extracted from resume{fileName ? ` · ${fileName}` : ''}
         </p>
-        <p style={{ fontSize: 11, color: 'hsl(210 10% 45%)', marginLeft: 'auto' }}>
+        <p style={{ fontSize: 11, color: 'hsl(210 10% 45%)', marginLeft: 'auto', width: '100%', maxWidth: 420, textAlign: 'right' }}>
           All fields are deterministically extracted — nothing is AI-invented
         </p>
       </div>

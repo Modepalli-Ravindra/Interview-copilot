@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Mic, Code2, Brain, Zap, GitBranch, ArrowRight, CheckCircle2, ChevronRight } from 'lucide-react';
+import { useIsMobile, useIsNarrow } from '../lib/useMediaQuery';
 
 // GitHub brand icon — not available in lucide-react v1+
 const GithubIcon = ({ size = 18 }: { size?: number }) => (
@@ -39,6 +40,8 @@ const stagger = {
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
+  const isNarrow = useIsNarrow();
 
   return (
     <div
@@ -70,7 +73,9 @@ export default function LandingPage() {
       {/* ── Nav ──────────────────────────────────────────── */}
       <nav style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '20px 48px', borderBottom: '1px solid hsl(215 15% 15%)',
+        gap: 12,
+        padding: isMobile ? '14px 16px' : '20px 48px',
+        borderBottom: '1px solid hsl(215 15% 15%)',
         backdropFilter: 'blur(12px)', position: 'sticky', top: 0, zIndex: 50,
         background: 'hsl(220 15% 5% / 0.85)',
       }}>
@@ -78,18 +83,20 @@ export default function LandingPage() {
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           className="flex items-center gap-2"
-          style={{ display: 'flex', alignItems: 'center', gap: 10 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}
         >
           <div style={{
-            width: 36, height: 36, borderRadius: 10,
+            width: isMobile ? 32 : 36, height: isMobile ? 32 : 36, borderRadius: 10,
             background: 'linear-gradient(135deg, hsl(176 40% 45%), hsl(174 85% 70%))',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
           }}>
-            <Mic size={18} color="hsl(220 15% 5%)" />
+            <Mic size={isMobile ? 15 : 18} color="hsl(220 15% 5%)" />
           </div>
           <span style={{
-            fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 18,
+            fontFamily: 'var(--font-sans)', fontWeight: 700,
+            fontSize: isNarrow ? 15 : 18,
             color: 'hsl(210 10% 92%)', letterSpacing: '-0.02em',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>
             InterviewPilot <span style={{ color: 'hsl(174 85% 70%)' }}>AI</span>
           </span>
@@ -98,12 +105,13 @@ export default function LandingPage() {
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
-          style={{ display: 'flex', gap: 12, alignItems: 'center' }}
+          style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}
         >
+          {!isNarrow && (
           <button
             onClick={() => navigate('/dashboard')}
             style={{
-              padding: '8px 20px', borderRadius: 8,
+              padding: isMobile ? '9px 16px' : '8px 20px', borderRadius: 8,
               border: '1px solid hsl(215 15% 22%)',
               background: 'transparent',
               color: 'hsl(210 10% 75%)', cursor: 'pointer',
@@ -121,16 +129,18 @@ export default function LandingPage() {
           >
             Dashboard
           </button>
+          )}
           <button
             onClick={() => navigate('/dashboard')}
             style={{
-              padding: '8px 20px', borderRadius: 8,
+              padding: isMobile ? '9px 16px' : '8px 20px', borderRadius: 8,
               background: 'linear-gradient(135deg, hsl(176 40% 45%), hsl(174 85% 55%))',
               border: 'none', color: 'hsl(220 15% 5%)',
               cursor: 'pointer', fontFamily: 'var(--font-sans)',
               fontSize: 14, fontWeight: 600,
               transition: 'transform 0.15s, box-shadow 0.15s',
               boxShadow: '0 4px 14px hsl(176 40% 45% / 0.35)',
+              whiteSpace: 'nowrap',
             }}
             onMouseEnter={e => {
               (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)';
@@ -147,30 +157,33 @@ export default function LandingPage() {
       </nav>
 
       {/* ── Hero ─────────────────────────────────────────── */}
-      <main style={{ flex: 1, padding: '80px 48px 0', maxWidth: 1200, margin: '0 auto', width: '100%' }}>
+      <main style={{ flex: 1, padding: isMobile ? '48px 16px 0' : '80px 48px 0', maxWidth: 1200, margin: '0 auto', width: '100%' }}>
         <motion.div
           variants={stagger}
           initial="initial"
           animate="animate"
-          style={{ textAlign: 'center', marginBottom: 80 }}
+          style={{ textAlign: 'center', marginBottom: isMobile ? 48 : 80 }}
         >
           {/* Badge */}
-          <motion.div variants={fadeUp} style={{ display: 'inline-flex', marginBottom: 24 }}>
+          <motion.div variants={fadeUp} style={{ display: 'inline-flex', marginBottom: 24, maxWidth: '100%' }}>
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
               padding: '6px 16px', borderRadius: 999,
               border: '1px solid hsl(176 40% 45% / 0.4)',
               background: 'hsl(176 40% 45% / 0.1)',
               color: 'hsl(174 85% 70%)',
-              fontSize: 12, fontWeight: 600, letterSpacing: '0.06em',
+              fontSize: isNarrow ? 10 : 12, fontWeight: 600, letterSpacing: '0.06em',
               textTransform: 'uppercase',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>
               <span style={{
-                width: 6, height: 6, borderRadius: '50%',
+                width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
                 background: 'hsl(174 85% 70%)',
                 animation: 'pulse-glow 2s ease-in-out infinite',
               }} />
-              Powered by OpenCode · Gemini · Claude · DeepSeek
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Powered by OpenCode · Gemini · Claude · DeepSeek
+              </span>
             </span>
           </motion.div>
 
@@ -178,7 +191,7 @@ export default function LandingPage() {
           <motion.h1
             variants={fadeUp}
             style={{
-              fontSize: 'clamp(40px, 6vw, 72px)',
+              fontSize: isNarrow ? 'clamp(34px, 11vw, 44px)' : 'clamp(40px, 6vw, 72px)',
               fontWeight: 800, lineHeight: 1.08,
               letterSpacing: '-0.03em',
               color: 'hsl(210 10% 96%)',
@@ -202,9 +215,10 @@ export default function LandingPage() {
           <motion.p
             variants={fadeUp}
             style={{
-              fontSize: 20, color: 'hsl(210 10% 60%)',
+              fontSize: isMobile ? 16 : 20, color: 'hsl(210 10% 60%)',
               maxWidth: 620, margin: '0 auto 40px',
               lineHeight: 1.6, fontWeight: 400,
+              padding: isMobile ? '0 4px' : 0,
             }}
           >
             Real-time voice mock interviews, live coding evaluation,
@@ -215,20 +229,22 @@ export default function LandingPage() {
           {/* CTA buttons */}
           <motion.div
             variants={fadeUp}
-            style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}
+            style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap', padding: '0 4px' }}
           >
             <motion.button
               whileHover={{ scale: 1.03, boxShadow: '0 8px 28px hsl(176 40% 45% / 0.55)' }}
               whileTap={{ scale: 0.97 }}
               onClick={() => navigate('/dashboard')}
               style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '14px 32px', borderRadius: 12,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '14px 28px', borderRadius: 12,
                 background: 'linear-gradient(135deg, hsl(176 40% 45%), hsl(174 85% 60%))',
                 border: 'none', color: 'hsl(220 15% 5%)',
                 cursor: 'pointer', fontSize: 16, fontWeight: 700,
                 fontFamily: 'var(--font-sans)',
                 boxShadow: '0 4px 20px hsl(176 40% 45% / 0.4)',
+                minHeight: 48, width: isMobile ? '100%' : 'auto',
+                maxWidth: isMobile ? 340 : 'none',
               }}
             >
               Start Free Mock Interview <ArrowRight size={18} />
@@ -237,14 +253,16 @@ export default function LandingPage() {
               whileHover={{ scale: 1.02, borderColor: 'hsl(176 40% 45%)' }}
               whileTap={{ scale: 0.97 }}
               style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '14px 28px', borderRadius: 12,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '14px 24px', borderRadius: 12,
                 border: '1px solid hsl(215 15% 22%)',
                 background: 'hsl(215 15% 10% / 0.6)',
                 color: 'hsl(210 10% 80%)',
                 cursor: 'pointer', fontSize: 16, fontWeight: 500,
                 fontFamily: 'var(--font-sans)',
                 backdropFilter: 'blur(8px)',
+                minHeight: 48, width: isMobile ? '100%' : 'auto',
+                maxWidth: isMobile ? 340 : 'none',
               }}
             >
               <GithubIcon size={18} /> View on GitHub
@@ -259,7 +277,7 @@ export default function LandingPage() {
           animate="animate"
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
             gap: 20, paddingBottom: 80,
           }}
         >
@@ -270,7 +288,7 @@ export default function LandingPage() {
               whileHover={{ y: -4, boxShadow: '0 12px 32px hsl(176 40% 45% / 0.12)' }}
               className="glass glass-hover"
               style={{
-                borderRadius: 16, padding: '28px 28px',
+                borderRadius: 16, padding: isMobile ? '24px 20px' : '28px 28px',
                 cursor: 'default', transition: 'all 0.2s',
               }}
             >
@@ -305,7 +323,7 @@ export default function LandingPage() {
 
       {/* ── Footer ───────────────────────────────────────── */}
       <footer style={{
-        textAlign: 'center', padding: '24px 48px',
+        textAlign: 'center', padding: isMobile ? '20px 16px' : '24px 48px',
         borderTop: '1px solid hsl(215 15% 12%)',
         color: 'hsl(210 10% 40%)', fontSize: 13,
       }}>

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import type { DashboardData } from '../types';
 import { apiFetch } from '../lib/api';
+import { useIsMobile } from '../lib/useMediaQuery';
 
 const scoreColor = (s: number) =>
   s >= 90 ? 'hsl(142 70% 50%)' : s >= 75 ? 'hsl(35 90% 55%)' : 'hsl(0 85% 60%)';
@@ -19,6 +20,7 @@ const fadePage = {
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -56,11 +58,14 @@ export default function DashboardPage() {
       {/* Header row */}
       <div style={{
         display: 'flex', justifyContent: 'space-between',
-        alignItems: 'flex-start', marginBottom: 32,
+        alignItems: isMobile ? 'stretch' : 'flex-start',
+        flexDirection: isMobile ? 'column' : 'row',
+        gap: 16,
+        marginBottom: 32,
       }}>
         <div>
           <h1 style={{
-            fontSize: 26, fontWeight: 700,
+            fontSize: isMobile ? 22 : 26, fontWeight: 700,
             color: 'hsl(210 10% 92%)', letterSpacing: '-0.02em',
             marginBottom: 4,
           }}>
@@ -75,13 +80,15 @@ export default function DashboardPage() {
           whileTap={{ scale: 0.97 }}
           onClick={() => navigate('/dashboard/interviews')}
           style={{
-            display: 'flex', alignItems: 'center', gap: 8,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             padding: '12px 24px', borderRadius: 12,
             background: 'linear-gradient(135deg, hsl(176 40% 45%), hsl(174 85% 60%))',
             border: 'none', color: 'hsl(220 15% 5%)',
             cursor: 'pointer', fontSize: 14, fontWeight: 700,
             boxShadow: '0 4px 16px hsl(176 40% 45% / 0.35)',
             fontFamily: 'var(--font-sans)',
+            minHeight: 44,
+            width: isMobile ? '100%' : 'auto',
           }}
         >
           <Plus size={17} /> New Interview
@@ -142,7 +149,11 @@ export default function DashboardPage() {
       </div>
 
       {/* Bottom grid: Recent sessions + Roadmap */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 20 }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr',
+        gap: 20,
+      }}>
 
         {/* Recent Sessions */}
         <motion.div

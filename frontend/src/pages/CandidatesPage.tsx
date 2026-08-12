@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import type { CandidateSummary, InterviewSession } from '../types';
 import { apiFetch } from '../lib/api';
+import { useIsMobile } from '../lib/useMediaQuery';
 
 const fadePage = {
   initial: { opacity: 0 },
@@ -35,6 +36,7 @@ const statusStyle: Record<string, { color: string; bg: string }> = {
 };
 
 export default function CandidatesPage() {
+  const isMobile = useIsMobile();
   const [candidates, setCandidates] = useState<CandidateSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,7 +102,7 @@ export default function CandidatesPage() {
       }}>
         <div>
           <h1 style={{
-            fontSize: 26, fontWeight: 700, color: 'hsl(210 10% 92%)',
+            fontSize: isMobile ? 22 : 26, fontWeight: 700, color: 'hsl(210 10% 92%)',
             letterSpacing: '-0.02em', marginBottom: 4,
           }}>
             Candidates
@@ -162,7 +164,7 @@ export default function CandidatesPage() {
           </div>
         </motion.div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, alignItems: 'start' }}>
           {/* ── Candidate cards ──────────────────────── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {candidates.map((c, i) => {
@@ -178,7 +180,7 @@ export default function CandidatesPage() {
                   onClick={() => openCandidate(c)}
                   style={{
                     textAlign: 'left', cursor: 'pointer',
-                    padding: '16px 18px', borderRadius: 14,
+                    padding: isMobile ? '14px' : '16px 18px', borderRadius: 14,
                     background: isSelected ? 'hsl(176 40% 45% / 0.1)' : 'hsl(215 15% 8%)',
                     border: `1px solid ${isSelected ? 'hsl(174 85% 60% / 0.45)' : 'hsl(215 15% 14%)'}`,
                     fontFamily: 'var(--font-sans)',
@@ -214,7 +216,11 @@ export default function CandidatesPage() {
                         fontSize: 12, color: 'hsl(210 10% 48%)', flexWrap: 'wrap',
                       }}>
                         {c.email && (
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                          <span style={{
+                            display: 'flex', alignItems: 'center', gap: 4, minWidth: 0,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            maxWidth: '100%',
+                          }}>
                             <Mail size={11} /> {c.email}
                           </span>
                         )}
@@ -261,7 +267,7 @@ export default function CandidatesPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.08 }}
             className="glass"
-            style={{ borderRadius: 16, padding: '24px', minHeight: 320 }}
+            style={{ borderRadius: 16, padding: isMobile ? '16px' : '24px', minHeight: 320 }}
           >
             {!selected ? (
               <div style={{ textAlign: 'center', padding: '48px 16px', color: 'hsl(210 10% 45%)', fontSize: 13 }}>
@@ -275,7 +281,7 @@ export default function CandidatesPage() {
               </div>
             ) : (
               <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
                   <div style={{
                     width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -359,7 +365,7 @@ export default function CandidatesPage() {
                             {s.score}
                           </span>
                         )}
-                        <ArrowUpRight size={14} color="hsl(210 10% 45%)" />
+                        <ArrowUpRight size={14} color="hsl(210 10% 45%)" style={{ flexShrink: 0, display: isMobile ? 'none' : 'block' }} />
                       </div>
                     );
                   })}

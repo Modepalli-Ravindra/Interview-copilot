@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type { InterviewSession } from '../types';
 import { apiFetch } from '../lib/api';
+import { useIsMobile } from '../lib/useMediaQuery';
 
 type SessionMode = 'CODING' | 'BEHAVIORAL' | 'SYSTEM_DESIGN' | 'PROJECT' | 'TECHNICAL' | 'HR' | 'MIXED' | 'RESUME_BASED' | 'JD_BASED' | 'SKILLS_BASED' | 'CODING_INTERVIEW';
 
@@ -92,6 +93,7 @@ const fadePage = {
 
 export default function HistoryPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [query, setQuery] = useState('');
   const [modeFilter, setModeFilter] = useState<'ALL' | SessionMode>('ALL');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -191,7 +193,7 @@ export default function HistoryPage() {
       {/* Header */}
       <div style={{ marginBottom: 20 }}>
         <h1 style={{
-          fontSize: 26, fontWeight: 700, color: 'hsl(210 10% 92%)',
+          fontSize: isMobile ? 21 : 26, fontWeight: 700, color: 'hsl(210 10% 92%)',
           letterSpacing: '-0.02em', marginBottom: 4,
         }}>
           History
@@ -223,7 +225,13 @@ export default function HistoryPage() {
             }}
           />
         </div>
-        <div style={{ display: 'flex', gap: 4, background: 'hsl(215 15% 8%)', padding: 4, borderRadius: 10, border: '1px solid hsl(215 15% 16%)' }}>
+        <div style={{
+          display: 'flex', gap: 4, background: 'hsl(215 15% 8%)',
+          padding: 4, borderRadius: 10, border: '1px solid hsl(215 15% 16%)',
+          flex: isMobile ? '1 1 100%' : undefined,
+          order: isMobile ? 3 : undefined,
+          overflowX: 'auto', maxWidth: '100%', scrollbarWidth: 'none',
+        }}>
           {(['ALL', 'CODING', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT', 'TECHNICAL', 'HR', 'MIXED', 'RESUME_BASED', 'JD_BASED', 'SKILLS_BASED', 'CODING_INTERVIEW'] as const).map(m => (
             <button
               key={m}
@@ -266,8 +274,8 @@ export default function HistoryPage() {
                 <button
                   onClick={() => setExpandedId(expanded ? null : s.id)}
                   style={{
-                    width: '100%', display: 'flex', alignItems: 'center', gap: 14,
-                    padding: '16px 20px', background: 'transparent', border: 'none',
+                    width: '100%', display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 14,
+                    padding: isMobile ? '13px 14px' : '16px 20px', background: 'transparent', border: 'none',
                     cursor: 'pointer', fontFamily: 'var(--font-sans)', textAlign: 'left',
                   }}
                 >
@@ -317,10 +325,12 @@ export default function HistoryPage() {
                       })()}
                     </p>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexShrink: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'hsl(210 10% 48%)' }}>
-                      <Clock size={13} /> {s.duration}
-                    </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 18, flexShrink: 0 }}>
+                    {!isMobile && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'hsl(210 10% 48%)' }}>
+                        <Clock size={13} /> {s.duration}
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 15, fontWeight: 700, color: s.score != null ? scoreColor(s.score) : 'hsl(210 10% 40%)', minWidth: 44, justifyContent: 'flex-end' }}>
                       <TrendingUp size={13} /> {s.score != null ? `${s.score}%` : '—'}
                     </div>
@@ -346,7 +356,7 @@ export default function HistoryPage() {
                     >
                       <div style={{
                         borderTop: '1px solid hsl(215 15% 14%)',
-                        padding: '20px 20px 24px',
+                        padding: isMobile ? '16px 14px 18px' : '20px 20px 24px',
                         background: 'hsl(215 15% 7%)',
                       }}>
                         {/* Summary */}
@@ -367,7 +377,7 @@ export default function HistoryPage() {
                           </div>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 20 }}>
                           {/* Score breakdown */}
                           <div>
                             <p style={{
@@ -447,7 +457,7 @@ export default function HistoryPage() {
                         </div>
 
                         {/* Tips + next topics */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 20 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 20, marginTop: 20 }}>
                           <div>
                             <p style={{
                               display: 'flex', alignItems: 'center', gap: 6,
@@ -499,17 +509,21 @@ export default function HistoryPage() {
                         </div>
 
                         {/* Footer action */}
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                        <div style={{
+                          display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20,
+                          flexWrap: 'wrap',
+                        }}>
                           {s.resumeFileUrl && (
                             <button
                               onClick={() => downloadResume(s)}
                               disabled={downloadingResume === s.id}
                               style={{
-                                display: 'flex', alignItems: 'center', gap: 6,
+                                display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center',
                                 padding: '9px 18px', borderRadius: 10, cursor: 'pointer',
                                 background: 'hsl(215 15% 14%)', color: 'hsl(210 10% 80%)',
                                 border: '1px solid hsl(215 15% 22%)',
                                 fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                                flex: isMobile ? '1 1 100%' : undefined,
                               }}
                             >
                               <Download size={14} />
@@ -519,11 +533,12 @@ export default function HistoryPage() {
                           <button
                             onClick={() => navigate(`/interview/${s.id}`)}
                             style={{
-                              display: 'flex', alignItems: 'center', gap: 6,
+                              display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center',
                               padding: '9px 18px', borderRadius: 10, cursor: 'pointer',
                               background: 'linear-gradient(135deg, hsl(176 40% 45%), hsl(174 85% 60%))',
                               border: 'none', color: 'hsl(220 15% 5%)',
                               fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-sans)',
+                              flex: isMobile ? '1 1 100%' : undefined,
                             }}
                           >
                             Retry This Interview <ChevronRight size={14} />

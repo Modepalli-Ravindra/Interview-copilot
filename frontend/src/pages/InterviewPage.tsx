@@ -11,6 +11,7 @@ import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
 import { socketService, classifyServerEventError } from '../services/socketService';
 import { apiFetch, getAuthToken, clearAuthToken } from '../lib/api';
 import { playChime } from '../lib/voice';
+import { useIsMobile, useIsNarrow } from '../lib/useMediaQuery';
 import type { Problem, FeedbackReport, GeneratedQuestion } from '../types';
 
 type TabMode = 'transcript' | 'code' | 'problem';
@@ -107,7 +108,8 @@ function ConnectionGate({ state, onRetry, onLogin, onDashboard }: {
       background: 'hsl(220 15% 5%)', fontFamily: 'var(--font-sans)', padding: 24,
     }}>
       <div className="glass" style={{
-        maxWidth: 420, width: '100%', borderRadius: 18, padding: 36,
+        maxWidth: 420, width: '100%', borderRadius: 18,
+        padding: 'clamp(20px, 6vw, 36px)',
         textAlign: 'center',
       }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
@@ -130,6 +132,8 @@ function ConnectionGate({ state, onRetry, onLogin, onDashboard }: {
 export default function InterviewPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
+  const isNarrow = useIsNarrow();
   const [activeTab, setActiveTab] = useState<TabMode>('transcript');
   const [isThinking, setIsThinking] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -473,8 +477,8 @@ export default function InterviewPage() {
     }}>
       {/* ── Top bar ──────────────────────────────────── */}
       <header style={{
-        display: 'flex', alignItems: 'center', gap: 16,
-        padding: '12px 24px',
+        display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 16,
+        padding: isMobile ? '10px 12px' : '12px 24px',
         background: 'hsl(215 15% 7%)',
         borderBottom: '1px solid hsl(215 15% 13%)',
         flexShrink: 0,
@@ -487,24 +491,29 @@ export default function InterviewPage() {
             color: 'hsl(210 10% 50%)', fontSize: 13,
             fontFamily: 'var(--font-sans)', padding: 0,
             transition: 'color 0.2s',
+            minHeight: 40, minWidth: isNarrow ? 34 : 'auto',
+            justifyContent: 'center', flexShrink: 0,
           }}
           onMouseEnter={e => (e.currentTarget.style.color = 'hsl(174 85% 65%)')}
           onMouseLeave={e => (e.currentTarget.style.color = 'hsl(210 10% 50%)')}
         >
-          <ChevronLeft size={16} /> Dashboard
+          <ChevronLeft size={16} /> {!isNarrow && 'Dashboard'}
         </button>
 
-        <div style={{ width: 1, height: 20, background: 'hsl(215 15% 18%)' }} />
+        {!isNarrow && <div style={{ width: 1, height: 20, background: 'hsl(215 15% 18%)', flexShrink: 0 }} />}
 
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: 'hsl(210 10% 88%)' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: isMobile ? 13 : 14, fontWeight: 600, color: 'hsl(210 10% 88%)',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
             AI Interview Session
           </div>
-          <div style={{ fontSize: 12, color: 'hsl(210 10% 45%)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
-            Session {sessionId}
+          <div style={{ fontSize: 12, color: 'hsl(210 10% 45%)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Session {sessionId}</span>
             {isLive === true && (
               <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4,
+                display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
                 color: 'hsl(142 70% 60%)', fontSize: 11, fontWeight: 600,
                 padding: '1px 8px', borderRadius: 999,
                 background: 'hsl(142 70% 50% / 0.12)',
@@ -515,7 +524,7 @@ export default function InterviewPage() {
             )}
             {isLive === false && (
               <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4,
+                display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
                 color: 'hsl(35 90% 60%)', fontSize: 11, fontWeight: 600,
                 padding: '1px 8px', borderRadius: 999,
                 background: 'hsl(35 90% 55% / 0.12)',
@@ -529,8 +538,8 @@ export default function InterviewPage() {
 
         {/* Timer */}
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 7,
-          padding: '6px 14px', borderRadius: 8,
+          display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0,
+          padding: isMobile ? '6px 10px' : '6px 14px', borderRadius: 8,
           background: elapsed > 2400
             ? 'hsl(0 85% 60% / 0.12)'
             : 'hsl(215 15% 11%)',
@@ -546,23 +555,32 @@ export default function InterviewPage() {
           </span>
         </div>
 
-        <button style={{
-          background: 'hsl(215 15% 11%)',
-          border: '1px solid hsl(215 15% 18%)',
-          borderRadius: 8, padding: '7px',
-          cursor: 'pointer', display: 'flex',
-        }}>
+        <button
+          title="Settings"
+          style={{
+            background: 'hsl(215 15% 11%)',
+            border: '1px solid hsl(215 15% 18%)',
+            borderRadius: 8, padding: 0,
+            cursor: 'pointer', display: 'flex',
+            alignItems: 'center', justifyContent: 'center',
+            width: isMobile ? 40 : 34, height: isMobile ? 40 : 34, flexShrink: 0,
+          }}
+        >
           <Settings2 size={16} color="hsl(210 10% 50%)" />
         </button>
       </header>
 
       {/* ── Main workspace ───────────────────────────── */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      <div style={{
+        flex: 1, display: 'flex', overflow: isMobile ? 'visible' : 'hidden',
+        flexDirection: isMobile ? 'column' : 'row',
+      }}>
 
         {/* Left: Chat / Problem / Code panels */}
         <div style={{
           flex: 1, display: 'flex', flexDirection: 'column',
           overflow: 'hidden', minWidth: 0,
+          minHeight: isMobile ? '60vh' : 0,
         }}>
           {/* Tab bar */}
           <div style={{
@@ -571,15 +589,16 @@ export default function InterviewPage() {
             background: 'hsl(215 15% 7%)',
             borderBottom: '1px solid hsl(215 15% 13%)',
             flexShrink: 0,
+            overflowX: 'auto',
           }}>
             {tabs.map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
                 onClick={() => setActiveTab(key)}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 7,
-                  padding: '8px 18px', border: 'none',
-                  cursor: 'pointer', fontSize: 13, fontWeight: 500,
+                  display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0,
+                  padding: isMobile ? '9px 14px' : '8px 18px', border: 'none',
+                  cursor: 'pointer', fontSize: isMobile ? 12.5 : 13, fontWeight: 500,
                   fontFamily: 'var(--font-sans)',
                   background: 'transparent',
                   color: activeTab === key ? 'hsl(174 85% 70%)' : 'hsl(210 10% 48%)',
@@ -588,6 +607,7 @@ export default function InterviewPage() {
                     : '2px solid transparent',
                   marginBottom: -1,
                   transition: 'color 0.18s',
+                  minHeight: 40,
                 }}
               >
                 <Icon size={14} /> {label}
@@ -613,7 +633,7 @@ export default function InterviewPage() {
               )}
 
               {activeTab === 'problem' && (
-                <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
+                <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '20px 16px' : '24px 28px' }}>
                   <div style={{
                     maxWidth: 680,
                     color: 'hsl(210 10% 80%)',
@@ -670,11 +690,14 @@ export default function InterviewPage() {
         {/* Right: AI avatar + voice sidebar */}
         <aside style={{
           flex: 1,
-          borderLeft: '1px solid hsl(215 15% 13%)',
+          borderLeft: isMobile ? 'none' : '1px solid hsl(215 15% 13%)',
+          borderTop: isMobile ? '1px solid hsl(215 15% 13%)' : 'none',
           background: 'hsl(215 15% 6%)',
-          padding: '24px 20px',
+          padding: isMobile ? '16px 16px' : '24px 20px',
           display: 'flex', flexDirection: 'column',
           gap: 18, overflowY: 'auto',
+          minHeight: isMobile ? 380 : 0,
+          flexShrink: 0,
         }}>
           {/* Avatar + status */}
           <div style={{
@@ -684,6 +707,7 @@ export default function InterviewPage() {
             <AiAvatar
               isSpeaking={isPlayingAudio}
               isListening={isListening}
+              size={isMobile ? 130 : 180}
             />
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8,
@@ -914,7 +938,7 @@ export default function InterviewPage() {
               background: 'hsl(220 15% 3% / 0.7)',
               backdropFilter: 'blur(4px)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              padding: '24px',
+              padding: isMobile ? '12px' : '24px',
             }}
             onClick={() => setShowReport(false)}
           >
@@ -928,7 +952,7 @@ export default function InterviewPage() {
                 overflowY: 'auto', borderRadius: 20,
                 background: 'hsl(215 15% 8%)',
                 border: '1px solid hsl(215 15% 18%)',
-                padding: '28px 32px',
+                padding: isMobile ? '20px 16px' : '28px 32px',
                 boxShadow: '0 24px 80px hsl(220 15% 3% / 0.8)',
               }}
             >
@@ -950,13 +974,13 @@ export default function InterviewPage() {
               </div>
 
               {/* Overall score */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginBottom: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginBottom: 24, flexWrap: isNarrow ? 'wrap' : 'nowrap', justifyContent: isNarrow ? 'center' : 'flex-start', textAlign: isNarrow ? 'center' : 'left' }}>
                 <div style={{
-                  width: 84, height: 84, borderRadius: '50%', flexShrink: 0,
+                  width: isMobile ? 72 : 84, height: isMobile ? 72 : 84, borderRadius: '50%', flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   background: `${scoreColor(feedback.score)}1a`,
                   border: `4px solid ${scoreColor(feedback.score)}`,
-                  fontSize: 26, fontWeight: 800, color: scoreColor(feedback.score),
+                  fontSize: isMobile ? 22 : 26, fontWeight: 800, color: scoreColor(feedback.score),
                 }}>
                   {feedback.score}
                 </div>
