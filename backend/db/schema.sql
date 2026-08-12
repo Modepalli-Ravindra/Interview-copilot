@@ -2,9 +2,12 @@
 -- InterviewPilot session store (Supabase Postgres)
 --
 -- HOW TO USE THIS FILE:
---   * Supabase JS-client store (SUPABASE_URL + SUPABASE_KEY):
---     paste this whole file into the Supabase SQL editor and RUN it once.
---     (The JS client cannot create tables, so this step is required.)
+--   * NEW database: paste this whole file into the Supabase SQL editor and
+--     RUN it once. (The JS client cannot create tables, so this is required.)
+--   * EXISTING database (already ran an older schema.sql):
+--     only the ADDITIVE ALTERs matter (see db/migrations/0001_*.sql for the
+--     minimal user_id + voice upgrade). This file is idempotent — re-running
+--     it only adds missing columns, never deletes data.
 --   * pg store (DATABASE_URL): the backend applies this automatically at
 --     boot (CREATE IF NOT EXISTS) — no manual step needed.
 -- ──────────────────────────────────────────────────────────────
@@ -79,8 +82,6 @@ create table if not exists users (
 );
 
 alter table sessions add column if not exists user_id uuid;
-
--- Phase 6: voice interview metadata (mode, enabled, state-machine + metrics).
 alter table sessions add column if not exists voice jsonb;
 
 -- Single-user app: the backend connects with the owner/service-role

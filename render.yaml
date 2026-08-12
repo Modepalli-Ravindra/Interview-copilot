@@ -35,12 +35,16 @@ services:
         value: production
       - key: PORT
         value: "3000"
-      # CORS origin for REST + Socket.IO. MUST be the exact deployed frontend
-      # origin (e.g. https://yourapp.vercel.app). Secret only in the sense that
-      # it differs per environment — supply it via the dashboard.
+      # CORS origin for REST + Socket.IO. MUST be exactly the deployed frontend
+      # origin with NO quotes, NO trailing slash, NO path:
+      #   https://my-vercel-app.vercel.app
+      # A stray newline/quote makes Node throw ERR_INVALID_CHAR on every
+      # request (the value lands in the Access-Control-Allow-Origin header).
       - key: FRONTEND_URL
         sync: false
       # ── Security ────────────────────────────────────────────
+      # AUTH_TEST_MODE (test-only JWT bypass) must NEVER be set here — it is
+      # only for the offline backend/scripts/* smoke suites.
       # JWT secret for account auth (register/login + all /api routes except
       # /health + socket handshake). REQUIRED: server.ts refuses to boot in
       # production without it. Generate with:
@@ -100,9 +104,11 @@ services:
       - key: AI_GATEWAY_MAX_RETRIES
         value: "1"
       # ── Container memory budget (512MB free tier) ───────────
-      # OmniRoute heap; backend heap is fixed at 96MB in supervisor.sh.
+      # Heaps tuned so combined RSS stays under the 512MB cgroup limit
+      # (status 137 = OOM kill if exceeded). Backend heap comes from the
+      # BACKEND_MEMORY_MB default inside supervisor.sh.
       - key: OMNIROUTE_MEMORY_MB
-        value: "320"
+        value: "192"
       # opencode fallback is not available on Render.
       - key: OPENCODE_SERVER_URL
         value: disabled

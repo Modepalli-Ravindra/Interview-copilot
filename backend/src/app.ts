@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import 'dotenv/config';
 import { authMiddleware } from './middleware/auth';
+import { corsOriginAllowList, corsOriginDiagnostic } from './services/corsConfig';
 import authRouter from './routes/auth';
 import healthRouter from './routes/health';
 import sessionsRouter from './routes/sessions';
@@ -24,9 +25,25 @@ const app = express();
 // Enable Helmet to set security headers and prevent basic vulnerabilities
 app.use(helmet());
 
-// Configure CORS to allow secure requests from the Vite frontend port
+// CORS for the Vite frontend. FRONTEND_URL is normalized + validated at boot
+// (backend/src/services/corsConfig.ts) so a bad value fails the deploy instead
+// of throwing ERR_INVALID_CHAR on every request. Uses a server-side allow-list
+// (foreign origins get no ACAO header) and the SAME origin as Socket.IO.
+import { getCorsOrigin } from './services/corsConfig';
+
+// Fail fast in production if FRONTEND_URL is invalid
+if (process.env.NODE_ENV === 'production') {
+  try {
+    getCorsOrigin(); // this will throw if invalid
+  } catch (err) {
+    console.error('[CORS FATAL]', err);
+    process.exit(1);
+  }
+}
+
+console.log(`[CORS] ${corsOriginDiagnostic()}`);
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: corsOriginAllowList,
   credentials: true
 }));
 

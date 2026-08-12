@@ -199,6 +199,21 @@ function runStoreMappingTests() {
   check('postgres UPSERT conflict-update writes user_id + voice', pgSrc.includes('user_id = excluded.user_id') && pgSrc.includes('voice = excluded.voice'), '');
   const sbSrc = fs.readFileSync(path.resolve(__dirname, '../dist/services/stores/supabaseStore.js'), 'utf-8');
   check('supabase upsert lists user_id + voice', sbSrc.includes('user_id:') && sbSrc.includes('voice:'), '');
+  check('supabase persist upserts on id conflict', sbSrc.includes('.upsert(') && sbSrc.includes("onConflict: 'id'"), '');
+
+  // ── Production schema sync: the DB must carry user_id + voice. The code is
+  //    already writing these columns, so a missing one fails every upsert with
+  //    PGRST204. The migration must be additive + idempotent. ──
+  console.log('\n[Section 1b] Production schema migration (user_id + voice)');
+  const schema = fs.readFileSync(path.resolve(__dirname, '../db/schema.sql'), 'utf-8');
+  const migration = fs.readFileSync(path.resolve(__dirname, '../db/migrations/0001_add_user_id_and_voice.sql'), 'utf-8');
+  check('schema.sql adds voice column additively', schema.includes('add column if not exists voice jsonb'), '');
+  check('schema.sql adds user_id column additively', schema.includes('add column if not exists user_id uuid'), '');
+  check('migration file adds voice column additively', /add column if not exists voice\s+jsonb/i.test(migration), '');
+  check('migration file adds user_id column additively', /add column if not exists user_id\s+uuid/i.test(migration), '');
+  const migLower = migration.toLowerCase();
+  check('migration never drops/truncates sessions', !migLower.includes('drop table') && !migLower.includes('truncate'), '');
+  check('migration is idempotent (IF NOT EXISTS both columns)', (migration.match(/add column if not exists/g) || []).length === 2, '');
 }
 
 // ──────────────────────────────────────────────────────────────

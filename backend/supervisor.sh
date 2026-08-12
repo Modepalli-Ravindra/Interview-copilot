@@ -7,36 +7,66 @@
 # container (non-zero exit) when the backend cannot stay alive so Render
 # surfaces a clear error instead of a silent crash loop.
 #
+# MEMORY (Render free = 512MB total): the V8 heap caps below are tuned so the
+# combined RSS (heap + V8/native overhead per process) stays comfortably under
+# the 512MB cgroup limit. Exceeding it makes the kernel OOM-kill the container
+# with exit status 137. Override via env only on a larger paid instance.
+#
 # SAFETY: this script only ever prints the NAMES of secrets (set/unset),
 # never their values. It never prints JWT_SECRET, SUPABASE_* keys,
 # S3 secrets or AI credentials.
 
 # OmniRoute always stays internal on 20128.
 OMNIROUTE_PORT=20128
-# Render free = 512MB total RAM. Cap OmniRoute's V8 heap (image default 1024
-# would OOM). Override via env if you tune it on a paid instance.
-OMNIROUTE_MEMORY_MB="${OMNIROUTE_MEMORY_MB:-320}"
+# OmniRoute heap. 192MB + ~80-110MB V8/native overhead ≈ ~300MB RSS.
+OMNIROUTE_MEMORY_MB="${OMNIROUTE_MEMORY_MB:-192}"
 # Backend public port: Render injects PORT (e.g. 10000). Local fallback 3000.
 BACKEND_PORT="${PORT:-3000}"
-# Backend gets a modest heap; the rest of the 512MB belongs to OmniRoute.
-BACKEND_MEMORY_MB="${BACKEND_MEMORY_MB:-96}"
+# Backend heap. 64MB + ~40-60MB overhead ≈ ~120MB RSS.
+BACKEND_MEMORY_MB="${BACKEND_MEMORY_MB:-64}"
 # Fail-fast guard: if the backend exits within this many seconds of starting,
 # MAX times in a row, the supervisor gives up and exits non-zero.
 BACKEND_MIN_UP_SECONDS="${BACKEND_MIN_UP_SECONDS:-10}"
 BACKEND_MAX_FAST_FAILS="${BACKEND_MAX_FAST_FAILS:-3}"
 # Give OmniRoute a beat to bind before the backend starts calling it.
 OMNIROUTE_START_SLEEP="${OMNIROUTE_START_SLEEP:-2}"
+# How many seconds to wait for children to exit after SIGTERM before KILL.
+SHUTDOWN_GRACE_SECONDS="${SHUTDOWN_GRACE_SECONDS:-15}"
+
+mem_budget=$((OMNIROUTE_MEMORY_MB + BACKEND_MEMORY_MB))
+if [ "$mem_budget" -gt 350 ]; then
+  echo "[supervisor] WARNING: combined heap budget ${mem_budget}MB is too high for a 512MB container — the kernel will OOM-kill it (exit 137)."
+  echo "[supervisor] Capping OMNIROUTE_MEMORY_MB to 192 and BACKEND_MEMORY_MB to 64 to prevent silent crashes."
+  OMNIROUTE_MEMORY_MB=192
+  BACKEND_MEMORY_MB=64
+  mem_budget=$((OMNIROUTE_MEMORY_MB + BACKEND_MEMORY_MB))
+fi
 
 echo "[supervisor] script started"
 echo "[supervisor] current user: $(id -un 2>/dev/null || echo unknown) (uid $(id -u 2>/dev/null || echo '?'))"
 echo "[supervisor] working directory: $(pwd 2>/dev/null || echo '?')"
 echo "[supervisor] PORT=${BACKEND_PORT} OMNIROUTE_PORT=${OMNIROUTE_PORT}"
-echo "[supervisor] heap: omniroute=${OMNIROUTE_MEMORY_MB}MB backend=${BACKEND_MEMORY_MB}MB"
+echo "[supervisor] heap: omniroute=${OMNIROUTE_MEMORY_MB}MB backend=${BACKEND_MEMORY_MB}MB (combined ${mem_budget}MB, RSS will exceed heap)"
 echo "[supervisor] env presence: JWT_SECRET=$([ -n "${JWT_SECRET:-}" ] && echo set || echo unset) FRONTEND_URL=$([ -n "${FRONTEND_URL:-}" ] && echo set || echo unset) SUPABASE_URL=$([ -n "${SUPABASE_URL:-}" ] && echo set || echo unset) SUPABASE_KEY=$([ -n "${SUPABASE_KEY:-}" ] && echo set || echo unset) SUPABASE_SERVICE_ROLE_KEY=$([ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] && echo set || echo unset) SUPABASE_S3_ACCESS_KEY=$([ -n "${SUPABASE_S3_ACCESS_KEY:-}" ] && echo set || echo unset) SUPABASE_S3_SECRET_KEY=$([ -n "${SUPABASE_S3_SECRET_KEY:-}" ] && echo set || echo unset) OMNIROUTE_URL=$([ -n "${OMNIROUTE_URL:-}" ] && echo set || echo unset)"
 
 echo "[supervisor] checking OmniRoute runtime: /app/dev/run-standalone.mjs $([ -f /app/dev/run-standalone.mjs ] && echo present || echo MISSING)"
 echo "[supervisor] checking backend runtime: /app/interviewpilot/dist/server.js $([ -f /app/interviewpilot/dist/server.js ] && echo present || echo MISSING)"
 echo "[supervisor] checking backend deps: /app/interviewpilot/node_modules $([ -d /app/interviewpilot/node_modules ] && echo present || echo MISSING)"
+
+# A child is dead when its /proc entry is gone OR it is a zombie (exited but
+# not yet reaped). `kill -0` alone is NOT enough: it returns success for a
+# zombie, which would leave us waiting forever and never restarting the child.
+is_dead() {
+  [ -r "/proc/$1/status" ] || return 0
+  grep -q '^State:[[:space:]]*Z' "/proc/$1/status" && return 0
+  return 1
+}
+
+# RSS of a process in KB (read-only; falls back to empty when unavailable).
+rss_kb() {
+  sed -n 's/^VmRSS:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "/proc/$1/status" 2>/dev/null
+  :
+}
 
 echo "[supervisor] starting OmniRoute on :${OMNIROUTE_PORT}"
 (
@@ -81,6 +111,16 @@ node -e '
 shutdown() {
   echo "[supervisor] shutting down..."
   kill -TERM "$OMNI_PID" "$BACKEND_PID" 2>/dev/null || true
+  waited=0
+  while [ "$waited" -lt "$SHUTDOWN_GRACE_SECONDS" ]; do
+    if is_dead "$OMNI_PID" && is_dead "$BACKEND_PID"; then break; fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if ! is_dead "$OMNI_PID" || ! is_dead "$BACKEND_PID"; then
+    echo "[supervisor] force-killing children that ignored SIGTERM after ${waited}s"
+    kill -KILL "$OMNI_PID" "$BACKEND_PID" 2>/dev/null || true
+  fi
   wait "$OMNI_PID" 2>/dev/null || true
   wait "$BACKEND_PID" 2>/dev/null || true
   echo "[supervisor] shutdown complete"
@@ -89,12 +129,20 @@ shutdown() {
 trap shutdown TERM INT
 
 BACKEND_FAST_FAILS=0
+LOOP_COUNT=0
 
-# Keep both alive; restart any child that exits. Backend gets a bounded
-# restart budget; OmniRoute is internal, so it restarts indefinitely but its
-# exit codes are logged for visibility.
+# Keep both alive; restart any child that exits. At most ONE instance of each
+# service ever exists: a child is restarted only after the old PID has been
+# reaped (is_dead), so we never stack duplicate backends/OmniRoutes.
 while :; do
-  if ! kill -0 "$OMNI_PID" 2>/dev/null; then
+  LOOP_COUNT=$((LOOP_COUNT + 1))
+  if [ $((LOOP_COUNT % 10)) -eq 0 ]; then
+    omni_rss=$(rss_kb "$OMNI_PID")
+    back_rss=$(rss_kb "$BACKEND_PID")
+    echo "[supervisor] memory: omniroute RSS=${omni_rss}KB backend RSS=${back_rss}KB (heap caps ${OMNIROUTE_MEMORY_MB}MB/${BACKEND_MEMORY_MB}MB, container 512MB)"
+  fi
+
+  if is_dead "$OMNI_PID"; then
     OMNI_EXIT=0
     wait "$OMNI_PID" 2>/dev/null
     OMNI_EXIT=$?
@@ -110,7 +158,7 @@ while :; do
     echo "[supervisor] OmniRoute PID ${OMNI_PID}"
   fi
 
-  if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+  if is_dead "$BACKEND_PID"; then
     BACKEND_EXIT=0
     wait "$BACKEND_PID" 2>/dev/null
     BACKEND_EXIT=$?

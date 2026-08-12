@@ -15,6 +15,10 @@
  *   8. legacy sessions (no userId) remain readable by any authenticated user
  *   9. GET /api/auth/me reflects the verified token identity
  *  10. a representative voice route also enforces ownership (404 cross-user)
+ *  11. CORS: FRONTEND_URL normalization unit checks (quotes/trailing slash/
+ *      control chars/wildcards), plus live header checks — the configured
+ *      origin receives ACAO + credentials, a foreign origin receives nothing
+ *      (server-side allow-list, no ERR_INVALID_CHAR regression).
  *
  * The JWT secret is pinned to a known value BEFORE dotenv loads so tokens can
  * be minted with the exact same secret the middleware resolves.
@@ -30,7 +34,9 @@ const path = require('path');
 const jwt = require('jsonwebtoken');
 
 const TEST_SECRET = 'smoke-auth-jwt-secret-0123456789';
+const TEST_FRONTEND = 'http://allowed-frontend.example.com';
 process.env.JWT_SECRET = TEST_SECRET; // dotenv will NOT overwrite existing keys
+process.env.FRONTEND_URL = TEST_FRONTEND; // normalized + used by cors()/socket.io
 process.env.SUPABASE_URL = '';
 process.env.SUPABASE_KEY = '';
 process.env.DATABASE_URL = '';
@@ -50,6 +56,15 @@ function check(name, condition, detail) {
     failed += 1;
     failures.push(name);
     console.log(`  FAIL  ${name}${detail ? ` — ${detail}` : ''}`);
+  }
+}
+
+function throws(fn) {
+  try {
+    fn();
+    return false;
+  } catch {
+    return true;
   }
 }
 
@@ -74,10 +89,11 @@ function restore(file, data) {
 }
 
 let base = '';
-async function req(method, url, token, body) {
+async function req(method, url, token, body, origin) {
   const headers = {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (body !== undefined) headers['content-type'] = 'application/json';
+  if (origin) headers.origin = origin;
   const res = await fetch(`${base}${url}`, {
     method,
     headers,
@@ -90,7 +106,7 @@ async function req(method, url, token, body) {
   } catch {
     json = null;
   }
-  return { status: res.status, body: json };
+  return { status: res.status, headers: res.headers, body: json };
 }
 
 function mintToken(userId, email, name) {
@@ -106,9 +122,55 @@ async function runTests() {
   const TOKEN_B = mintToken('user-b', 'bob@example.com', 'Bob');
   const FORGED = jwt.sign({ userId: 'user-a', email: 'alice@example.com', name: 'Alice' }, 'wrong-secret');
 
+  // ── CORS origin normalization (pure function; the boot path already used
+  //    the same module to build the cors() config, so a bad FRONTEND_URL here
+  //    would have crashed the import and failed this suite immediately). ──
+  console.log('\n[CORS] FRONTEND_URL normalization');
+  const corsCfg = require('../dist/services/corsConfig.js');
+  check('normalizeOrigin trims surrounding whitespace', corsCfg.normalizeOrigin('  https://app.example.com  ') === 'https://app.example.com', '');
+  check('normalizeOrigin strips surrounding double quotes', corsCfg.normalizeOrigin('"https://app.example.com"') === 'https://app.example.com', '');
+  check('normalizeOrigin strips surrounding single quotes', corsCfg.normalizeOrigin("'https://app.example.com'") === 'https://app.example.com', '');
+  check('normalizeOrigin strips trailing slash', corsCfg.normalizeOrigin('https://app.example.com/') === 'https://app.example.com', '');
+  check('normalizeOrigin preserves a port', corsCfg.normalizeOrigin('http://localhost:5173') === 'http://localhost:5173', '');
+  check('normalizeOrigin trims a stray trailing newline (paste artifact)', corsCfg.normalizeOrigin('https://app.example.com\n') === 'https://app.example.com', '');
+  check('normalizeOrigin rejects interior control chars (ERR_INVALID_CHAR root cause)', throws(() => corsCfg.normalizeOrigin('https://app.exa\nmple.com')), '');
+  check('normalizeOrigin rejects interior tabs', throws(() => corsCfg.normalizeOrigin('https://app.example\t.com')), '');
+  check('normalizeOrigin rejects wildcard *', throws(() => corsCfg.normalizeOrigin('*')), '');
+  check('normalizeOrigin rejects wildcard subdomains', throws(() => corsCfg.normalizeOrigin('https://*.vercel.app')), '');
+  check('normalizeOrigin rejects a path', throws(() => corsCfg.normalizeOrigin('https://app.example.com/path')), '');
+  check('normalizeOrigin rejects a query string', throws(() => corsCfg.normalizeOrigin('https://app.example.com?x=1')), '');
+  check('normalizeOrigin rejects a non-URL', throws(() => corsCfg.normalizeOrigin('not a url')), '');
+  check('normalizeOrigin rejects a non-http protocol', throws(() => corsCfg.normalizeOrigin('ftp://app.example.com')), '');
+
+  const savedNodeEnv = process.env.NODE_ENV;
+  const savedFrontend = process.env.FRONTEND_URL;
+  process.env.NODE_ENV = 'production';
+  process.env.FRONTEND_URL = 'https://app.exa\nmple.com';
+  check('getCorsOrigin fails fast on interior control chars in production', throws(() => corsCfg.getCorsOrigin()), '');
+  process.env.FRONTEND_URL = '*';
+  check('getCorsOrigin fails fast on wildcard in production', throws(() => corsCfg.getCorsOrigin()), '');
+  process.env.FRONTEND_URL = 'https://app.example.com/';
+  check('getCorsOrigin normalizes trailing slash in production', corsCfg.getCorsOrigin() === 'https://app.example.com', '');
+  process.env.FRONTEND_URL = savedFrontend;
+  process.env.NODE_ENV = savedNodeEnv;
+
   // 1. Open routes stay open
   const health = await req('GET', '/api/health', null);
   check('Health endpoint open without token', health.status === 200, String(health.status));
+
+  // ── Live CORS headers (the exact ERR_INVALID_CHAR regression): if the
+  //    configured origin were invalid, these requests would throw instead of
+  //    returning. ──
+  console.log('\n[CORS] live header behavior');
+  const corsAllowed = await req('GET', '/api/health', null, undefined, TEST_FRONTEND);
+  check('Allowed Origin gets ACAO = configured origin', corsAllowed.headers && corsAllowed.headers.get('access-control-allow-origin') === TEST_FRONTEND, corsAllowed.headers ? corsAllowed.headers.get('access-control-allow-origin') : 'no headers');
+  check('Allowed Origin gets credentials header', corsAllowed.headers && corsAllowed.headers.get('access-control-allow-credentials') === 'true', corsAllowed.headers ? corsAllowed.headers.get('access-control-allow-credentials') : 'no headers');
+  check('Allowed Origin request still 200', corsAllowed.status === 200, String(corsAllowed.status));
+
+  const corsDenied = await req('GET', '/api/health', null, undefined, 'http://evil.example.com');
+  check('Foreign Origin gets NO ACAO header (server-side allow-list)', corsDenied.headers && corsDenied.headers.get('access-control-allow-origin') === null, corsDenied.headers ? corsDenied.headers.get('access-control-allow-origin') : 'no headers');
+  check('Foreign Origin does NOT receive the configured origin', corsDenied.headers && corsDenied.headers.get('access-control-allow-origin') !== TEST_FRONTEND, corsDenied.headers ? corsDenied.headers.get('access-control-allow-origin') : 'no headers');
+  check('Foreign Origin request still 200 (browser enforces CORS)', corsDenied.status === 200, String(corsDenied.status));
 
   const reg = await req('POST', '/api/auth/register', null, {
     email: 'new@example.com',

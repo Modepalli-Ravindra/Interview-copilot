@@ -147,20 +147,64 @@ jobs:
             exit 1
           fi
 
-      - name: Boot Render image (supervisor + OmniRoute) and probe health
+      - name: Boot Render image (supervisor + OmniRoute) under a 512MB cap and probe health
         run: |
-          docker run -d --name ip-render-smoke \
+          docker run -d --name ip-render-smoke --memory=512m --memory-swap=512m --cpus=1 \
             -e NODE_ENV=production -e JWT_SECRET="$(openssl rand -hex 32)" \
             -e FRONTEND_URL=http://localhost:5173 -e PORT=3000 \
             -p 3001:3000 interviewpilot-render:ci
           ok=""
-          for i in $(seq 1 60); do
+          for i in $(seq 1 90); do
             if curl -sf http://127.0.0.1:3001/api/health >/dev/null 2>&1; then ok=1; break; fi
             sleep 2
           done
-          docker logs ip-render-smoke 2>&1 | tail -60 || true
-          docker rm -f ip-render-smoke >/dev/null 2>&1 || true
+          docker logs ip-render-smoke 2>&1 | tail -80 || true
+          docker stats --no-stream ip-render-smoke || true
           if [ -z "$ok" ]; then
             echo "::error::Render container (supervisor + OmniRoute) never became healthy"
+            docker rm -f ip-render-smoke >/dev/null 2>&1 || true
             exit 1
           fi
+
+      - name: Verify OmniRoute reachable and exactly one process per service
+        run: |
+          ok=""
+          for i in $(seq 1 30); do
+            if docker exec ip-render-smoke node -e "fetch('http://127.0.0.1:20128/v1/models',{signal:AbortSignal.timeout(3000)}).then(r=>process.exit(r.ok||r.status===200?0:1)).catch(()=>process.exit(1))"; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then
+            echo "::error::OmniRoute not reachable on 127.0.0.1:20128"
+            docker rm -f ip-render-smoke >/dev/null 2>&1 || true
+            exit 1
+          fi
+          omniroute=$(docker exec ip-render-smoke sh -c "ps -eo args= | grep -c 'run-standalone.mjs'" || true)
+          backend=$(docker exec ip-render-smoke sh -c "ps -eo args= | grep -c 'dist/server.js'" || true)
+          echo "omniroute processes=$omniroute backend processes=$backend"
+          if [ "$omniroute" != "1" ] || [ "$backend" != "1" ]; then
+            echo "::error::expected exactly 1 OmniRoute + 1 backend process, got $omniroute/$backend"
+            docker rm -f ip-render-smoke >/dev/null 2>&1 || true
+            exit 1
+          fi
+
+      - name: Verify no OOM under 512MB and SIGTERM exits 0
+        run: |
+          oom=$(docker inspect -f '{{.State.OOMKilled}}' ip-render-smoke)
+          echo "OOMKilled=$oom"
+          if [ "$oom" = "true" ]; then
+            echo "::error::container was OOM-killed under the 512MB cap (status 137)"
+            docker rm -f ip-render-smoke >/dev/null 2>&1 || true
+            exit 1
+          fi
+          docker kill --signal=SIGTERM ip-render-smoke >/dev/null 2>&1 || true
+          code=$(docker wait ip-render-smoke)
+          docker logs ip-render-smoke 2>&1 | tail -30 || true
+          docker rm -f ip-render-smoke >/dev/null 2>&1 || true
+          if [ "$code" != "0" ]; then
+            echo "::error::supervisor did not exit 0 on SIGTERM (got $code)"
+            exit 1
+          fi
+          echo "SIGTERM graceful exit code: $code"

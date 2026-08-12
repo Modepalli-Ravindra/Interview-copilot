@@ -126,7 +126,7 @@ function SettingRow({ icon, iconBg, title, desc, children }: {
 export default function SettingsPage() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   
   const nameParts = (user?.name || '').split(' ');
   const defaultFirstName = nameParts[0] || '';
