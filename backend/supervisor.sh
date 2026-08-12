@@ -16,7 +16,7 @@
 # (Express + Socket.IO, Supabase, GitHub analyzer, coding engine and full AI
 # response buffering), so it gets the majority of the heap. OmniRoute is an
 # internal loopback router and gets a minimal heap. Combined RSS for
-# 192+64 ≈ ~400MB, leaving ~100MB of the 512MB cgroup as headroom.
+# 256+128 ≈ ~400MB, leaving ~100MB of the 512MB cgroup as headroom.
 #
 # SAFETY: this script only ever prints the NAMES of secrets (set/unset),
 # never their values. It never prints JWT_SECRET, SUPABASE_* keys,
@@ -24,12 +24,12 @@
 
 # OmniRoute always stays internal on 20128.
 OMNIROUTE_PORT=20128
-# OmniRoute heap. 320MB + ~80-110MB V8/native overhead ≈ ~400-430MB RSS.
-OMNIROUTE_MEMORY_MB="${OMNIROUTE_MEMORY_MB:-320}"
+# OmniRoute heap. 256MB + ~80-110MB V8/native overhead ≈ ~350-380MB RSS.
+OMNIROUTE_MEMORY_MB="${OMNIROUTE_MEMORY_MB:-256}"
 # Backend public port: Render injects PORT (e.g. 10000). Local fallback 3000.
 BACKEND_PORT="${PORT:-3000}"
-# Backend heap. 64MB + ~40-60MB overhead ≈ ~100-120MB RSS.
-BACKEND_MEMORY_MB="${BACKEND_MEMORY_MB:-64}"
+# Backend heap. 128MB + ~40-60MB overhead ≈ ~170-190MB RSS.
+BACKEND_MEMORY_MB="${BACKEND_MEMORY_MB:-128}"
 # Fail-fast guard: if the backend exits within this many seconds of starting,
 # MAX times in a row, the supervisor gives up and exits non-zero.
 BACKEND_MIN_UP_SECONDS="${BACKEND_MIN_UP_SECONDS:-10}"
@@ -42,9 +42,9 @@ SHUTDOWN_GRACE_SECONDS="${SHUTDOWN_GRACE_SECONDS:-15}"
 mem_budget=$((OMNIROUTE_MEMORY_MB + BACKEND_MEMORY_MB))
 if [ "$mem_budget" -gt 450 ]; then
   echo "[supervisor] WARNING: combined heap budget ${mem_budget}MB is too high for a 512MB container — the kernel will OOM-kill it (exit 137)."
-  echo "[supervisor] Capping OMNIROUTE_MEMORY_MB to 320 and BACKEND_MEMORY_MB to 64 to prevent silent crashes."
-  OMNIROUTE_MEMORY_MB=320
-  BACKEND_MEMORY_MB=64
+  echo "[supervisor] Capping OMNIROUTE_MEMORY_MB to 256 and BACKEND_MEMORY_MB to 128 to prevent silent crashes."
+  OMNIROUTE_MEMORY_MB=256
+  BACKEND_MEMORY_MB=128
   mem_budget=$((OMNIROUTE_MEMORY_MB + BACKEND_MEMORY_MB))
 fi
 
@@ -59,7 +59,7 @@ echo "[supervisor] current user: $(id -un 2>/dev/null || echo unknown) (uid $(id
 echo "[supervisor] working directory: $(pwd 2>/dev/null || echo '?')"
 echo "[supervisor] PORT=${BACKEND_PORT} OMNIROUTE_PORT=${OMNIROUTE_PORT}"
 echo "[supervisor] heap: omniroute=${OMNIROUTE_MEMORY_MB}MB backend=${BACKEND_MEMORY_MB}MB (combined ${mem_budget}MB, RSS will exceed heap)"
-echo "[supervisor] env presence: JWT_SECRET=$([ -n "${JWT_SECRET:-}" ] && echo set || echo unset) FRONTEND_URL=$([ -n "${FRONTEND_URL:-}" ] && echo set || echo unset) SUPABASE_URL=$([ -n "${SUPABASE_URL:-}" ] && echo set || echo unset) SUPABASE_KEY=$([ -n "${SUPABASE_KEY:-}" ] && echo set || echo unset) SUPABASE_SERVICE_ROLE_KEY=$([ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] && echo set || echo unset) SUPABASE_S3_ACCESS_KEY=$([ -n "${SUPABASE_S3_ACCESS_KEY:-}" ] && echo set || echo unset) SUPABASE_S3_SECRET_KEY=$([ -n "${SUPABASE_S3_SECRET_KEY:-}" ] && echo set || echo unset) OMNIROUTE_URL=$([ -n "${OMNIROUTE_URL:-}" ] && echo set || echo unset)"
+echo "[supervisor] env presence: JWT_SECRET=$([ -n "${JWT_SECRET:-}" ] && echo set || echo unset) FRONTEND_URL=$([ -n "${FRONTEND_URL:-}" ] && echo set || echo unset) SUPABASE_URL=$([ -n "${SUPABASE_URL:-}" ] && echo set || echo unset)"
 
 echo "[supervisor] checking OmniRoute runtime: /app/dev/run-standalone.mjs $([ -f /app/dev/run-standalone.mjs ] && echo present || echo MISSING)"
 echo "[supervisor] checking backend runtime: /app/interviewpilot/dist/server.js $([ -f /app/interviewpilot/dist/server.js ] && echo present || echo MISSING)"
