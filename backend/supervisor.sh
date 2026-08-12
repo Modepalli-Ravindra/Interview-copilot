@@ -12,18 +12,24 @@
 # the 512MB cgroup limit. Exceeding it makes the kernel OOM-kill the container
 # with exit status 137. Override via env only on a larger paid instance.
 #
+# Allocation intent: the BACKEND is the public service doing the heavy work
+# (Express + Socket.IO, Supabase, GitHub analyzer, coding engine and full AI
+# response buffering), so it gets the majority of the heap. OmniRoute is an
+# internal loopback router and gets a minimal heap. Combined RSS for
+# 192+64 ≈ ~400MB, leaving ~100MB of the 512MB cgroup as headroom.
+#
 # SAFETY: this script only ever prints the NAMES of secrets (set/unset),
 # never their values. It never prints JWT_SECRET, SUPABASE_* keys,
 # S3 secrets or AI credentials.
 
 # OmniRoute always stays internal on 20128.
 OMNIROUTE_PORT=20128
-# OmniRoute heap. 192MB + ~80-110MB V8/native overhead ≈ ~300MB RSS.
-OMNIROUTE_MEMORY_MB="${OMNIROUTE_MEMORY_MB:-192}"
+# OmniRoute heap. 64MB + ~80-110MB V8/native overhead ≈ ~150-175MB RSS.
+OMNIROUTE_MEMORY_MB="${OMNIROUTE_MEMORY_MB:-64}"
 # Backend public port: Render injects PORT (e.g. 10000). Local fallback 3000.
 BACKEND_PORT="${PORT:-3000}"
-# Backend heap. 64MB + ~40-60MB overhead ≈ ~120MB RSS.
-BACKEND_MEMORY_MB="${BACKEND_MEMORY_MB:-64}"
+# Backend heap. 192MB + ~40-60MB overhead ≈ ~230-250MB RSS.
+BACKEND_MEMORY_MB="${BACKEND_MEMORY_MB:-192}"
 # Fail-fast guard: if the backend exits within this many seconds of starting,
 # MAX times in a row, the supervisor gives up and exits non-zero.
 BACKEND_MIN_UP_SECONDS="${BACKEND_MIN_UP_SECONDS:-10}"
@@ -36,11 +42,17 @@ SHUTDOWN_GRACE_SECONDS="${SHUTDOWN_GRACE_SECONDS:-15}"
 mem_budget=$((OMNIROUTE_MEMORY_MB + BACKEND_MEMORY_MB))
 if [ "$mem_budget" -gt 350 ]; then
   echo "[supervisor] WARNING: combined heap budget ${mem_budget}MB is too high for a 512MB container — the kernel will OOM-kill it (exit 137)."
-  echo "[supervisor] Capping OMNIROUTE_MEMORY_MB to 192 and BACKEND_MEMORY_MB to 64 to prevent silent crashes."
-  OMNIROUTE_MEMORY_MB=192
-  BACKEND_MEMORY_MB=64
+  echo "[supervisor] Capping OMNIROUTE_MEMORY_MB to 64 and BACKEND_MEMORY_MB to 192 to prevent silent crashes."
+  OMNIROUTE_MEMORY_MB=64
+  BACKEND_MEMORY_MB=192
   mem_budget=$((OMNIROUTE_MEMORY_MB + BACKEND_MEMORY_MB))
 fi
+
+# OmniRoute's internal bootstrap logic reads process.env.OMNIROUTE_MEMORY_MB to
+# tune its own child processes and worker threads. If we don't export it, it
+# defaults to 512MB and crashes on the free tier despite NODE_OPTIONS.
+export OMNIROUTE_MEMORY_MB
+export BACKEND_MEMORY_MB
 
 echo "[supervisor] script started"
 echo "[supervisor] current user: $(id -un 2>/dev/null || echo unknown) (uid $(id -u 2>/dev/null || echo '?'))"
