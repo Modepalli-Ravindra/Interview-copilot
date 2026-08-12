@@ -105,9 +105,12 @@ services:
         value: "1"
       # ── Container memory budget (512MB free tier) ───────────
       # Heaps tuned so combined RSS stays under the 512MB cgroup limit
-      # (status 137 = OOM kill if exceeded). Backend heap comes from the
-      # BACKEND_MEMORY_MB default inside supervisor.sh.
+      # (status 137 = OOM kill if exceeded). The backend does the heavy work
+      # (Express + Socket.IO + Supabase + AI response buffering) so it gets the
+      # larger share; OmniRoute is a minimal loopback router.
       - key: OMNIROUTE_MEMORY_MB
+        value: "64"
+      - key: BACKEND_MEMORY_MB
         value: "192"
       # opencode fallback is not available on Render.
       - key: OPENCODE_SERVER_URL

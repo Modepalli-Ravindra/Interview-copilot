@@ -32,6 +32,7 @@ interface InterviewState {
   setRunningCode: (val: boolean) => void;
   setCodeResult: (result: CodeExecutionResult | null) => void;
   setAudioAmplitudes: (amps: number[]) => void;
+  reset: () => void;
 }
 
 export const useInterviewStore = create<InterviewState>((set) => ({
@@ -65,4 +66,15 @@ export const useInterviewStore = create<InterviewState>((set) => ({
   setRunningCode: (val) => set({ isRunningCode: val }),
   setCodeResult: (result) => set({ lastCodeResult: result }),
   setAudioAmplitudes: (amps) => set({ audioAmplitudes: amps }),
+  reset: () => set({
+    currentSession: null,
+    isRecording: false,
+    isPlayingAudio: false,
+    isConnected: false,
+    transcript: [],
+    currentCode: '# Write your solution here\ndef solution():\n    pass\n',
+    isRunningCode: false,
+    lastCodeResult: null,
+    audioAmplitudes: Array(16).fill(0.1),
+  }),
 }));

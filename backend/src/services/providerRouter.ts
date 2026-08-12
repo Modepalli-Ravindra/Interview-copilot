@@ -189,6 +189,13 @@ export async function abortGatewaySession(gatewaySessionId: string): Promise<voi
   }
 }
 
+export function clearGatewayHistory(gatewaySessionId: string): void {
+  const rec = sessions.get(gatewaySessionId);
+  if (rec) {
+    rec.history = [];
+    rec.serverHasContext = false;
+  }
+}
 export function gatewayStatus(): { enabled: boolean; baseUrl: string; provider: string } {
   const primary = providers[0];
   if (!primary) return { enabled: false, baseUrl: '', provider: 'mock' };

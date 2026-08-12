@@ -463,7 +463,7 @@ export default function InterviewPage() {
       <ConnectionGate
         state={connState}
         onRetry={() => { setConnState({ phase: 'connecting' }); setJoinAttempt(n => n + 1); }}
-        onLogin={() => navigate('/auth')}
+        onLogin={() => navigate('/login')}
         onDashboard={() => navigate('/dashboard/interviews')}
       />
     );

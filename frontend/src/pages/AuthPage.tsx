@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useNavigate, Navigate } from 'react-router-dom';
-import { apiFetch } from '../lib/api';
+import { useNavigate, Navigate, useLocation } from 'react-router-dom';
+import { apiFetch, setAuthToken, clearAuthToken } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Bot, Mail, Lock, User, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -8,7 +8,8 @@ import { useIsMobile } from '../lib/useMediaQuery';
 
 export default function AuthPage() {
   const isMobile = useIsMobile();
-  const [isLogin, setIsLogin] = useState(true);
+  const location = useLocation();
+  const [isLogin, setIsLogin] = useState(!location.pathname.includes('/register'));
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -18,6 +19,10 @@ export default function AuthPage() {
   
   const { login, user } = useAuth();
   const navigate = useNavigate();
+
+  React.useEffect(() => {
+    setIsLogin(!location.pathname.includes('/register'));
+  }, [location.pathname]);
 
   // If already logged in, redirect to dashboard
   if (user) {
@@ -66,8 +71,25 @@ export default function AuthPage() {
         throw new Error(data.error || 'Authentication failed');
       }
 
-      login(data.token, data.user);
-      navigate('/dashboard');
+      // Store the JWT so the auth middleware accepts the verification call.
+      setAuthToken(data.token);
+
+      // Confirm authentication with the backend before granting dashboard access.
+      const meRes = await apiFetch('/api/auth/me');
+      if (!meRes.ok) {
+        clearAuthToken();
+        window.localStorage.removeItem('interviewpilot_user');
+        throw new Error('Could not verify your session. Please try again.');
+      }
+      const meData = await meRes.json();
+      if (!meData.success || !meData.user) {
+        clearAuthToken();
+        window.localStorage.removeItem('interviewpilot_user');
+        throw new Error('Could not verify your session. Please try again.');
+      }
+
+      login(data.token, meData.user);
+      navigate('/dashboard', { replace: true });
     } catch (err: any) {
       setError(err.message || 'An unexpected error occurred');
     } finally {
@@ -262,6 +284,7 @@ export default function AuthPage() {
           {isLogin ? "Don't have an account? " : "Already have an account? "}
           <button
             onClick={() => {
+              navigate(isLogin ? '/register' : '/login');
               setIsLogin(!isLogin);
               setError('');
             }}

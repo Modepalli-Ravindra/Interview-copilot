@@ -10,6 +10,7 @@ import {
   createGatewaySession,
   sendGatewayMessage,
   parseInterviewTurn,
+  clearGatewayHistory,
   type GatewaySession,
 } from './aiGateway';
 import { isSemanticDuplicate, normalizeQuestion } from './questionDedup';
@@ -136,6 +137,21 @@ const DIFFICULTY_GUIDANCE: Record<InterviewDifficulty, string> = {
   Hard: 'Push hard: deep trade-offs, scaling concerns, complex multi-part problems, and sharp follow-ups on any weak spot.',
 };
 
+export const TOPIC_FLOW = [
+  'Introduction (Tell me about yourself)',
+  'Project Discussion',
+  'Role Expectations',
+  'Technologies Overview',
+  'Basic Java',
+  'OOP Concepts',
+  'Collections Framework',
+  'Exceptions',
+  'SQL Basics',
+  'Scenario Questions',
+  'Medium Difficulty Technical',
+  'Hard Difficulty Technical'
+];
+
 // ──────────────────────────────────────────────────────────────
 // Prompt building
 // ──────────────────────────────────────────────────────────────
@@ -247,12 +263,13 @@ export function buildSystemPrompt(ctx: InterviewContext): string {
     `</evaluation_rubric>`,
     ``,
     `<operating_rules>`,
+    `- You MUST behave like a REAL HUMAN interviewer (Microsoft, Amazon, etc). Use conversational affirmations like "Good", "Interesting", "Let's move to another topic", "I understand", "No problem".`,
     `- Personalize every question to the candidate's resume and the target role. Do not ask generic questions when the resume gives you material.`,
     `- Combine all sources (resume + job description + GitHub + skills) into the questions where possible.`,
     `- Speak in voice-friendly language, maximum 3 sentences per turn.`,
     `- After each answer, evaluate it against the rubric:`,
-    `  * Strong answer — acknowledge briefly (one short clause), then ask ONE probing follow-up that goes one level deeper on the same topic before moving on.`,
-    `  * Weak or wrong — respond with sender "teaching": one-sentence concept explanation plus one practical tip, then ask one focused follow-up or move on.`,
+    `  * Strong answer — acknowledge briefly with human affirmations, then ask ONE probing follow-up that goes one level deeper, or move to the next topic. Dynamically increase difficulty for the next question.`,
+    `  * Weak or wrong answer — respond with sender "teaching": decrease difficulty, and explain the concept naturally using conversational Telugu written ONLY in English letters (e.g., "Simple ga explain chesthanu. Inheritance ante parent class properties child class ki vasthai..."). Do NOT use Telugu Unicode. Then ask a focused follow-up or move on.`,
     `  * Off-topic, vague, or evasive — respond with sender "teaching" and gently redirect back to the question.`,
     `- Alternate topics so the interview stays balanced, and never repeat a question.`,
     `- Do not invent facts about the candidate's background; if something is unclear, ask rather than assume.`,
@@ -487,7 +504,16 @@ export async function handleInterviewAnswer(state: InterviewState, candidateText
       .map((m) => m.text.trim())
       .filter(Boolean)
       .slice(0, 12);
+    const currentTopic = TOPIC_FLOW[Math.min(state.turnCount, TOPIC_FLOW.length - 1)];
     const prompt = [
+      `<context>`,
+      `Resume Summary: ${state.analysis?.summary || 'N/A'}`,
+      `JD Summary: ${state.jdProfile || 'N/A'}`,
+      `Difficulty: ${state.difficulty || 'Medium'}`,
+      `Interview State: Turn ${state.turnCount}/${state.maxTurns}`,
+      `Current Topic: ${currentTopic}`,
+      `</context>`,
+      ``,
       `<question_asked>`,
       lastQuestion,
       `</question_asked>`,
@@ -501,14 +527,15 @@ export async function handleInterviewAnswer(state: InterviewState, candidateText
       `</candidate_answer>`,
       ``,
       `Evaluate the candidate's answer against your ${state.mode} evaluation rubric. Then choose the next turn:`,
-      `- Strong answer: acknowledge briefly (one short clause), then ask ONE probing follow-up that goes one level deeper on the same topic, or move to the next topic if the point is fully covered.`,
-      `- Weak or wrong answer: send a "teaching" turn — one-sentence concept explanation plus one practical tip — then ask one focused follow-up or move on.`,
-      `- Off-topic, vague, or evasive answer: send a "teaching" turn that gently redirects back to the question.`,
+      `- Strong answer: acknowledge briefly (e.g. "Good", "Interesting"), then move to the next topic or ask ONE probing follow-up. Increase difficulty for the next question.`,
+      `- Weak or wrong answer: send a "teaching" turn — decrease difficulty, explain the concept naturally using conversational Telugu written ONLY in English letters (NO Telugu Unicode), then ask one focused follow-up or move on.`,
+      `- Off-topic or evasive: send a "teaching" turn that gently redirects.`,
       ``,
-      `DEDUP RULE: NEVER repeat a question in <questions_already_asked>, even reworded. Treat trivial rewordings as duplicates (e.g. "Explain your project architecture." and "Walk me through the architecture of your project." are the same). You may revisit a topic, but the wording must ask something genuinely new and more specific.`,
+      `DEDUP RULE: NEVER repeat a question in <questions_already_asked>, even reworded.`,
       ``,
       `Reply with exactly one JSON object, no markdown: {"sender":"interviewer"|"teaching","text":"<max 3 sentences, voice-friendly>"}`,
     ].join('\n');
+    clearGatewayHistory(state.gateway.gatewaySessionId);
     const completion = await sendGatewayMessage(state.gateway.gatewaySessionId, prompt);
     turn = parseInterviewTurn(completion.text);
     // Soft guard: if the model somehow echoes an earlier question verbatim,

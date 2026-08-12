@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Mic, Code2, Brain, History,
   Settings, LogOut, Target, Users, GitBranch, Menu, X,
@@ -20,14 +20,12 @@ const navItems = [
 ];
 
 export default function DashboardLayout() {
-  const navigate = useNavigate();
   const { user, logout } = useAuth();
   const isMobile = useIsMobile();
   const [menuOpen, setMenuOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
-    navigate('/auth');
   };
 
   const handleNav = () => setMenuOpen(false);

@@ -12,6 +12,7 @@ export {
   createGatewaySession,
   sendGatewayMessage,
   abortGatewaySession,
+  clearGatewayHistory,
   gatewayStatus,
 } from './providerRouter';
 

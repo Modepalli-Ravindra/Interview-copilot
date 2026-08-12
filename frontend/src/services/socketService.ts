@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-import { getBackendUrl, getAuthToken } from '../lib/api';
+import { getBackendUrl, getAuthToken, clearAuthToken } from '../lib/api';
 
 export type SocketErrorType = 'AUTH_ERROR' | 'NETWORK_ERROR' | 'UNKNOWN_ERROR';
 
@@ -58,6 +58,13 @@ class SocketService {
   connect(onError?: (err: SocketConnectionError) => void): Socket {
     if (this.socket?.connected) return this.socket;
 
+    const token = getAuthToken();
+    if (!token) {
+      const authErr = { type: 'AUTH_ERROR' as const, message: 'No authentication token found. Cannot connect.' };
+      setTimeout(() => onError?.(authErr), 0);
+      throw new Error('No authentication token found. Cannot connect.');
+    }
+
     if (this.socket) {
       this.socket.removeAllListeners();
       this.socket.disconnect();
@@ -66,17 +73,15 @@ class SocketService {
 
     const backend = getBackendUrl();
     const url = backend ? `${backend}/interview` : '/interview';
-    const token = getAuthToken();
     this.socket = io(url, {
       transports: ['websocket', 'polling'],
       withCredentials: true,
       autoConnect: true,
-      // Bounded retries: never loop forever on a dead endpoint.
       reconnection: true,
       reconnectionDelay: 1500,
       reconnectionDelayMax: 8000,
       reconnectionAttempts: 6,
-      ...(token ? { auth: { token } } : {}),
+      auth: { token },
     });
 
     this.socket.on('connect', () => {
@@ -89,7 +94,13 @@ class SocketService {
 
     this.socket.on('connect_error', (err) => {
       console.error('[SocketService] Connection error:', err.message);
-      onError?.(classifySocketError(err));
+      const classified = classifySocketError(err);
+      if (classified.type === 'AUTH_ERROR') {
+        clearAuthToken();
+        window.localStorage.removeItem('interviewpilot_user');
+        window.location.href = '/';
+      }
+      onError?.(classified);
     });
 
     return this.socket;

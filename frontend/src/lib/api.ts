@@ -24,5 +24,13 @@ export async function apiFetch(input: string, init?: RequestInit): Promise<Respo
   const headers = new Headers(init?.headers);
   const token = getAuthToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  return fetch(url, { ...init, headers, credentials: 'include' });
+  const res = await fetch(url, { ...init, headers, credentials: 'include' });
+  if (res.status === 401) {
+    clearAuthToken();
+    window.localStorage.removeItem('interviewpilot_user');
+    if (window.location.pathname !== '/') {
+      window.location.href = '/';
+    }
+  }
+  return res;
 }
