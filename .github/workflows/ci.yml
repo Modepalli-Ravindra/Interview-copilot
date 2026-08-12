@@ -178,6 +178,20 @@ jobs:
           done
           if [ -z "$ok" ]; then
             echo "::error::OmniRoute not reachable on 127.0.0.1:20128"
+            echo "--- DIAGNOSTICS: CONTAINER STATUS ---"
+            docker ps -a
+            echo "--- DIAGNOSTICS: MEMORY STATUS ---"
+            docker stats --no-stream ip-render-smoke || true
+            echo "--- DIAGNOSTICS: PROCESS LIST ---"
+            docker exec ip-render-smoke sh -c 'ps aux' || true
+            echo "--- DIAGNOSTICS: LISTENING PORTS ---"
+            docker exec ip-render-smoke sh -c 'netstat -tlnp || ss -lntp' || true
+            echo "--- DIAGNOSTICS: DIRECT HEALTH CURL ---"
+            docker exec ip-render-smoke sh -c 'curl -v -m 2 http://127.0.0.1:20128/api/monitoring/health || true' || true
+            echo "--- DIAGNOSTICS: CONTAINER LOGS ---"
+            docker logs ip-render-smoke
+            echo "--- DIAGNOSTICS: CONTAINER INSPECT ---"
+            docker inspect ip-render-smoke || true
             docker rm -f ip-render-smoke >/dev/null 2>&1 || true
             exit 1
           fi

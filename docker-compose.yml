@@ -7,7 +7,7 @@ services:
   # and quota state survive restarts. Bound to 127.0.0.1 only.
   # ─────────────────────────────────────────────────────────────
   omniroute:
-    image: diegosouzapw/omniroute:latest
+    image: diegosouzapw/omniroute:v3.8.49
     container_name: interviewpilot-omniroute
     restart: unless-stopped
     stop_grace_period: 40s

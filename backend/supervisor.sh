@@ -24,8 +24,8 @@
 
 # OmniRoute always stays internal on 20128.
 OMNIROUTE_PORT=20128
-# OmniRoute heap. 192MB + ~80-110MB V8/native overhead ≈ ~270-300MB RSS.
-OMNIROUTE_MEMORY_MB="${OMNIROUTE_MEMORY_MB:-192}"
+# OmniRoute heap. 320MB + ~80-110MB V8/native overhead ≈ ~400-430MB RSS.
+OMNIROUTE_MEMORY_MB="${OMNIROUTE_MEMORY_MB:-320}"
 # Backend public port: Render injects PORT (e.g. 10000). Local fallback 3000.
 BACKEND_PORT="${PORT:-3000}"
 # Backend heap. 64MB + ~40-60MB overhead ≈ ~100-120MB RSS.
@@ -40,10 +40,10 @@ OMNIROUTE_START_SLEEP="${OMNIROUTE_START_SLEEP:-2}"
 SHUTDOWN_GRACE_SECONDS="${SHUTDOWN_GRACE_SECONDS:-15}"
 
 mem_budget=$((OMNIROUTE_MEMORY_MB + BACKEND_MEMORY_MB))
-if [ "$mem_budget" -gt 350 ]; then
+if [ "$mem_budget" -gt 450 ]; then
   echo "[supervisor] WARNING: combined heap budget ${mem_budget}MB is too high for a 512MB container — the kernel will OOM-kill it (exit 137)."
-  echo "[supervisor] Capping OMNIROUTE_MEMORY_MB to 192 and BACKEND_MEMORY_MB to 64 to prevent silent crashes."
-  OMNIROUTE_MEMORY_MB=192
+  echo "[supervisor] Capping OMNIROUTE_MEMORY_MB to 320 and BACKEND_MEMORY_MB to 64 to prevent silent crashes."
+  OMNIROUTE_MEMORY_MB=320
   BACKEND_MEMORY_MB=64
   mem_budget=$((OMNIROUTE_MEMORY_MB + BACKEND_MEMORY_MB))
 fi
